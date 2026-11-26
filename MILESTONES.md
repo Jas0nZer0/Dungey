@@ -40,6 +40,8 @@ Defaults apply until you change them. Update this section when you decide.
 | Art source | Claude-generated art. Pixel art is likely. Final style decided at M7 | M7 |
 | Input | Keyboard and mouse only. Gamepad deferred | M1, M8 |
 | M4 position | Before M5. Move after M6 if you want build depth first | M4, M5, M6 |
+| Minimap reveal | Fog of war: tiles the player has seen stay drawn. Never shows the stairs. A full reveal or a stairs marker would remove the search that M4 added | M8 |
+| Stairs arrow timing | Appears the moment the stairs unlock. Built in M5 with the boss; pull it into M4 if you want it sooner | M4, M5 |
 
 ## Milestones
 
@@ -102,11 +104,13 @@ Defaults apply until you change them. Update this section when you decide.
 
 ### M5. Enemy roster and boss
 **Status:** todo
-**Scope:** 4 to 5 enemy types (chaser, shooter, swarmer, tank, summoner), one boss, simple behaviour states. The boss hides somewhere on each floor; killing it unlocks the stairs (call `unlockExit('boss')`, built in M4) and later grants an upgrade (M6). Floors are about 120x80 tiles (M4), so enemy spawns are limited to a ring around the player and pathfinding must scale to that map.
+**Scope:** 4 to 5 enemy types (chaser, shooter, swarmer, tank, summoner), one boss, simple behaviour states. The boss hides somewhere on each floor; killing it unlocks the stairs (call `unlockExit('boss')`, built in M4) and later grants an upgrade (M6). Floors are about 120x80 tiles (M4), so enemy spawns are limited to a ring around the player and pathfinding must scale to that map. Scope change: enemies must path around walls and cover so the player cannot cheese them by hiding behind geometry; the player is always under pressure. Use one shared flow field from the player (a BFS over the tile grid, rebuilt as the player changes tile), so cost does not grow with enemy count, and steer along it so a body never clips a corner. Also in M5: once the stairs unlock (timer or boss, see `unlockExit` in M4), a glowing, pulsing arrow near the player points straight at the stairs, as the crow flies, not along a route.
 **Done when:**
 - [ ] Each enemy type demands a different player response.
 - [ ] The boss has at least 2 phases and a clear tell for each attack.
-- [ ] Enemies path around walls without freezing.
+- [ ] Enemies path around walls without freezing, and the player cannot cheese them. Headless test: on 1,000 seeds, enemies placed at spawn points all reach a stationary player within a set time, and no enemy stays stuck for more than 1 s while a path exists.
+- [ ] Pathfinding cost holds 60 fps at the 160 enemy cap on a 120x80 floor (measure in Node and in a real browser).
+- [ ] After the stairs unlock, a glowing pulsing arrow points straight at them from the player. It points through walls, does not show before the unlock, and stays on screen when the stairs are off screen. Look and feel is `needs human`.
 
 **Risk:** pathfinding cost with many enemies. A flow field is the likely fix.
 **Handoff:**
@@ -136,10 +140,11 @@ Defaults apply until you change them. Update this section when you decide.
 
 ### M8. Menus, onboarding and persistence
 **Status:** todo
-**Scope:** Title screen, how-to-play, settings (volume, fullscreen), local high score and run history in `localStorage`.
+**Scope:** Title screen, how-to-play, settings (volume, fullscreen), local high score and run history in `localStorage`. Also a minimap in the HUD (added after M4 review; move it to M7 if the HUD is built there).
 **Done when:**
 - [ ] A new player understands the controls in under 30 seconds (`needs human`).
 - [ ] Scores persist across reloads and fail gracefully when storage is blocked.
+- [ ] A minimap shows the player, nearby layout and enemies on the 120x80 floor, and costs under 1 ms per frame (draw from a cached canvas, not per tile each frame). What it reveals is set by the pending decision below. `needs human` for readability.
 
 **Risk:** `localStorage` is blocked in some itch.io embed contexts.
 **Handoff:**
