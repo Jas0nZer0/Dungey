@@ -1,14 +1,21 @@
 import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  TILE, STEP, FIRE_INTERVAL, ENEMY_HP_START, ENEMY_CAP, PLAYER_HP, PLAYER_IFRAMES,
-  ENEMY_SPEED_START, ENEMY_SPEED_MAX, PLAYER_SPEED,
+  TILE, STEP, FIRE_INTERVAL, PLAYER_HP, PLAYER_IFRAMES, PLAYER_SPEED,
 } from '../src/config.js';
+// M3 moved enemy HP, speed and cap out of config.js into the difficulty config,
+// so these tests read the same values from there.
+import { DIFFICULTY } from '../src/difficulty.config.js';
+const ENEMY_HP_START = DIFFICULTY.enemyHp.start;
+const ENEMY_SPEED_START = DIFFICULTY.enemySpeed.start;
+const ENEMY_SPEED_MAX = DIFFICULTY.enemySpeed.max;
+const ENEMY_CAP = DIFFICULTY.enemyCap.max;
 import { player } from '../src/entities.js';
 import { isFloor } from '../src/map.js';
 import {
-  game, resetGame, spawnEnemy, updateGame, enemyStats,
+  game, resetGame, spawnEnemy, updateGame, enemyStats, runSummary,
 } from '../src/game.js';
+import { directorAt } from '../src/director.js';
 
 beforeEach(() => {
   resetGame();
@@ -108,6 +115,8 @@ test('spawner respects the enemy cap and keeps spawns away from the player', () 
   player.y = 2.5 * TILE;
   game.iframes = 1e9; // survive for the test
   for (let i = 0; i < 6000; i++) { game.spawnCd = 0; updateGame(STEP); }
+  // Run time reaches 100 s here, so the live cap is the curve value, below the hard max.
+  assert.ok(game.enemies.length <= directorAt(game.time).cap);
   assert.ok(game.enemies.length <= ENEMY_CAP);
   assert.ok(game.enemies.length > 0);
 });
@@ -133,7 +142,9 @@ test('enemies get faster and tougher with run time, speed capped below the playe
   assert.equal(early.hp, ENEMY_HP_START);
   assert.ok(mid.speed > early.speed && mid.hp > early.hp);
   assert.ok(late.hp > mid.hp);
-  assert.equal(late.speed, ENEMY_SPEED_MAX);
+  // Speed no longer hits its cap at 3.5 min: it ramps to 150 at 10:00 and tops out at the max.
+  assert.ok(late.speed <= ENEMY_SPEED_MAX && late.speed > mid.speed);
+  assert.equal(enemyStats(5000).speed, ENEMY_SPEED_MAX);
   assert.ok(ENEMY_SPEED_MAX < PLAYER_SPEED);
   game.time = 300;
   spawnEnemy(100, 100);

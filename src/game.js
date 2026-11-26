@@ -2,25 +2,31 @@
 // No DOM access, so tests can run it in Node.
 import {
   TILE, PLAYER_HP, PLAYER_IFRAMES, FIRE_INTERVAL, BULLET_SPEED, BULLET_RADIUS,
-  BULLET_LIFE, BULLET_DAMAGE, ENEMY_SIZE, ENEMY_SPEED_START, ENEMY_SPEED_PER_SEC, ENEMY_SPEED_MAX, ENEMY_HP_START,
-  ENEMY_HP_PER_SEC,
-  ENEMY_CONTACT_DAMAGE, ENEMY_FLASH, ENEMY_KNOCKBACK, ENEMY_CAP,
-  SPAWN_INTERVAL_START, SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_DECAY, SPAWN_MIN_DIST,
+  BULLET_LIFE, BULLET_DAMAGE, ENEMY_SIZE, ENEMY_CONTACT_DAMAGE, ENEMY_FLASH, ENEMY_KNOCKBACK,
+  SPAWN_MIN_DIST,
 } from './config.js';
+import { DIFFICULTY } from './difficulty.config.js';
+import { directorAt } from './director.js';
+import { createGrid } from './spatial.js';
 import { isFloor, mapWidth, mapHeight } from './map.js';
 import { moveBody } from './collision.js';
 import { player } from './entities.js';
 
+const grid = createGrid(mapWidth * TILE, mapHeight * TILE, TILE);
+const nearBuf = [];
+
 export const game = {
   state: 'playing', // 'playing' | 'dead'
   time: 0, // seconds survived this run
+  timeOffset: 0, // seconds added to the clock the director reads; an extension or "part 2" can set it
   kills: 0,
+  score: 0,
   hp: PLAYER_HP,
   iframes: 0,
   fireCd: 0,
   spawnCd: 1,
   projectiles: [], // { x, y, vx, vy, life }
-  enemies: [], // { x, y, w, h, vx, vy, hp, flash }
+  enemies: [], // { x, y, w, h, vx, vy, hp, maxHp, speed, flash }
   rng: Math.random, // tests replace this for determinism
 };
 
@@ -30,25 +36,40 @@ export function resetGame() {
   player.vx = 0;
   player.vy = 0;
   Object.assign(game, {
-    state: 'playing', time: 0, kills: 0, hp: PLAYER_HP, iframes: 0, fireCd: 0, spawnCd: 1,
+    state: 'playing', time: 0, timeOffset: 0, kills: 0, score: 0, hp: PLAYER_HP, iframes: 0, fireCd: 0, spawnCd: 1,
   });
   game.projectiles.length = 0;
   game.enemies.length = 0;
 }
 
-// Chaser stats for an enemy spawned at the given run time (seconds).
+// The time the difficulty director reads: run time plus the extension offset.
+export function directorTime() {
+  return game.time + game.timeOffset;
+}
+
+// Chaser stats for an enemy spawned at the given director time (seconds).
 export function enemyStats(time) {
-  return {
-    speed: Math.min(ENEMY_SPEED_MAX, ENEMY_SPEED_START + time * ENEMY_SPEED_PER_SEC),
-    hp: Math.round(ENEMY_HP_START + time * ENEMY_HP_PER_SEC),
-  };
+  const d = directorAt(time);
+  return { speed: d.speed, hp: d.hp };
 }
 
 export function spawnEnemy(x, y) {
-  const { speed, hp } = enemyStats(game.time);
+  const { speed, hp } = enemyStats(directorTime());
   game.enemies.push({
-    x, y, w: ENEMY_SIZE, h: ENEMY_SIZE, vx: 0, vy: 0, hp, speed, flash: 0,
+    x, y, w: ENEMY_SIZE, h: ENEMY_SIZE, vx: 0, vy: 0, hp, maxHp: hp, speed, flash: 0,
   });
+}
+
+// End-of-run numbers for the summary screen.
+export function runSummary() {
+  const over = Math.max(0, directorTime() - DIFFICULTY.softCap);
+  return {
+    time: game.time,
+    kills: game.kills,
+    score: Math.floor(game.score),
+    reachedOvertime: over > 0,
+    overtime: Math.min(over, game.time),
+  };
 }
 
 // Pick a random floor tile far enough from the player. Gives up after a few tries.
@@ -80,6 +101,7 @@ function fire() {
 function updateProjectiles(dt) {
   const half = ENEMY_SIZE / 2 + BULLET_RADIUS;
   const list = game.projectiles;
+  grid.build(game.enemies);
   for (let i = list.length - 1; i >= 0; i--) {
     const b = list[i];
     b.x += b.vx * dt;
@@ -87,22 +109,35 @@ function updateProjectiles(dt) {
     b.life -= dt;
     let dead = b.life <= 0 || !isFloor(Math.floor(b.x / TILE), Math.floor(b.y / TILE));
     if (!dead) {
-      for (const e of game.enemies) {
-        if (Math.abs(e.x - b.x) < half && Math.abs(e.y - b.y) < half) {
-          e.hp -= BULLET_DAMAGE;
-          e.flash = ENEMY_FLASH;
-          const len = Math.hypot(b.vx, b.vy) || 1;
-          moveBody(e, (b.vx / len) * ENEMY_KNOCKBACK, (b.vy / len) * ENEMY_KNOCKBACK);
-          dead = true;
-          break;
-        }
+      // Hit the lowest-index overlapping enemy among the nearby candidates.
+      let hit = -1;
+      for (const j of grid.near(b.x, b.y, nearBuf)) {
+        const e = game.enemies[j];
+        if (Math.abs(e.x - b.x) < half && Math.abs(e.y - b.y) < half && (hit < 0 || j < hit)) hit = j;
+      }
+      if (hit >= 0) {
+        const e = game.enemies[hit];
+        e.hp -= BULLET_DAMAGE;
+        e.flash = ENEMY_FLASH;
+        const len = Math.hypot(b.vx, b.vy) || 1;
+        moveBody(e, (b.vx / len) * ENEMY_KNOCKBACK, (b.vy / len) * ENEMY_KNOCKBACK);
+        dead = true;
       }
     }
     if (dead) list.splice(i, 1);
   }
-  const before = game.enemies.length;
-  game.enemies = game.enemies.filter((e) => e.hp > 0);
-  game.kills += before - game.enemies.length;
+  const sc = DIFFICULTY.score;
+  const mult = directorAt(directorTime()).phase === 'overtime' ? sc.overtimeMultiplier : 1;
+  const alive = [];
+  for (const e of game.enemies) {
+    if (e.hp > 0) {
+      alive.push(e);
+    } else {
+      game.kills++;
+      game.score += sc.perEnemyHp * e.maxHp * mult;
+    }
+  }
+  game.enemies = alive;
 }
 
 function updateEnemies(dt) {
@@ -116,9 +151,12 @@ function updateEnemies(dt) {
     e.vy = (dy / len) * e.speed;
   }
   // Push overlapping enemies apart so a crowd spreads instead of stacking.
+  // The grid limits each enemy to its neighbours, so the cost grows with n, not n^2.
+  grid.build(list);
   for (let i = 0; i < list.length; i++) {
-    for (let j = i + 1; j < list.length; j++) {
-      const a = list[i];
+    const a = list[i];
+    for (const j of grid.near(a.x, a.y, nearBuf)) {
+      if (j <= i) continue;
       const b = list[j];
       const dx = b.x - a.x;
       const dy = b.y - a.y;
@@ -158,14 +196,15 @@ function updateDamage(dt) {
 export function updateGame(dt) {
   if (game.state !== 'playing') return;
   game.time += dt;
+  game.score += DIFFICULTY.score.perSecond * dt;
   game.fireCd = Math.max(0, game.fireCd - dt);
   if (game.fireCd <= 0) fire();
   updateProjectiles(dt);
   game.spawnCd -= dt;
   if (game.spawnCd <= 0) {
-    const interval = Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_START - game.time * SPAWN_INTERVAL_DECAY);
-    game.spawnCd += interval;
-    if (game.enemies.length < ENEMY_CAP) trySpawn();
+    const dir = directorAt(directorTime());
+    game.spawnCd += dir.spawnInterval;
+    for (let i = 0; i < dir.spawnBatch && game.enemies.length < dir.cap; i++) trySpawn();
   }
   updateEnemies(dt);
   updateDamage(dt);

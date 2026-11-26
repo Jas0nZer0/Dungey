@@ -4,7 +4,8 @@ import { map, mapWidth, mapHeight } from './map.js';
 import { player } from './entities.js';
 import { camera } from './camera.js';
 import { mouse } from './input.js';
-import { game } from './game.js';
+import { game, runSummary, directorTime } from './game.js';
+import { DIFFICULTY } from './difficulty.config.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -83,13 +84,22 @@ function drawProjectiles() {
   }
 }
 
+const clock = (sec) => {
+  const s = Math.floor(sec);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
 function drawHud() {
   ctx.textAlign = 'left';
   ctx.font = '16px monospace';
   ctx.fillStyle = '#fff';
-  const secs = Math.floor(game.time);
   ctx.fillText(`HP ${'♥'.repeat(Math.max(0, game.hp))}`, 12, 24);
-  ctx.fillText(`Kills ${game.kills}   Time ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`, 12, 46);
+  ctx.fillText(`Time ${clock(game.time)}   Kills ${game.kills}   Score ${Math.floor(game.score)}`, 12, 46);
+  if (directorTime() > DIFFICULTY.softCap) {
+    // Pulse so the player notices the exponential phase has begun.
+    ctx.fillStyle = Math.floor(game.time * 2) % 2 === 0 ? '#ff5a5a' : '#ffb0b0';
+    ctx.fillText('OVERTIME: the dark is closing in', 12, 68);
+  }
   if (game.iframes > 0) {
     ctx.strokeStyle = `rgba(255,60,60,${Math.min(1, game.iframes)})`;
     ctx.lineWidth = 10;
@@ -128,13 +138,27 @@ export function render(paused) {
   if (game.state === 'dead') {
     ctx.fillStyle = 'rgba(80,0,0,0.65)';
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    const r = runSummary();
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
     ctx.font = '40px monospace';
-    ctx.fillText('YOU DIED', VIEW_W / 2, VIEW_H / 2 - 10);
+    ctx.fillText('YOU DIED', VIEW_W / 2, VIEW_H / 2 - 70);
     ctx.font = '16px monospace';
-    ctx.fillText(`Kills ${game.kills}   Time ${Math.floor(game.time)}s`, VIEW_W / 2, VIEW_H / 2 + 20);
-    ctx.fillText('Press R or Enter to restart', VIEW_W / 2, VIEW_H / 2 + 48);
+    const rows = [
+      ['Survived', clock(r.time)],
+      ['Kills', String(r.kills)],
+      ['Score', String(r.score)],
+    ];
+    if (r.reachedOvertime) rows.push(['Overtime', clock(r.overtime)]);
+    rows.forEach(([k, v], i) => {
+      const y = VIEW_H / 2 - 28 + i * 24;
+      ctx.textAlign = 'right';
+      ctx.fillText(k, VIEW_W / 2 - 10, y);
+      ctx.textAlign = 'left';
+      ctx.fillText(v, VIEW_W / 2 + 10, y);
+    });
+    ctx.textAlign = 'center';
+    ctx.fillText('Press R or Enter to restart', VIEW_W / 2, VIEW_H / 2 + 96);
     drawCrosshair();
   }
 
