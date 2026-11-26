@@ -8,6 +8,7 @@
 // Director time is game.time + game.timeOffset, so an extension mechanic or "part 2"
 // can shift the whole curve by setting game.timeOffset.
 export const DIFFICULTY = {
+  floorOffset: 90, // s of curve added per floor below the first; deeper floors start harder
   softCap: 600, // s. The run's soft cap (10:00). Scaling turns exponential after this.
 
   spawnInterval: { start: 1.5, atSoftCap: 0.6, growthPerMin: 0.8, min: 0.12 }, // s between spawn waves

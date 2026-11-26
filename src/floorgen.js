@@ -5,7 +5,7 @@
 // spanning tree plus extra links (so every room has at least two exits), carve 2-wide
 // L-shaped corridors, pick spawn and exit rooms, scatter cover, then validate. A layout that
 // fails validation is discarded and the next attempt seed is tried (still deterministic).
-import { MAP_W, MAP_H } from './config.js';
+import { FLOOR_W, FLOOR_H } from './config.js';
 import { FLOOR } from './floorgen.config.js';
 import { createRng, mixSeed } from './rng.js';
 
@@ -84,7 +84,7 @@ export function floorMetrics(floor) {
 // Layout rules that exist to limit enemy snagging until M5 adds pathfinding.
 // Returns counts of: dead-end floor tiles (one floor neighbour), 1-wide passages (walls on
 // opposite sides), and diagonal pinches (floor, wall / wall, floor in a 2x2 window).
-export function snagReport(tiles, w = MAP_W, h = MAP_H) {
+export function snagReport(tiles, w = FLOOR_W, h = FLOOR_H) {
   const f = (x, y) => tiles[y]?.[x] === '.';
   let deadEnds = 0;
   let narrow = 0;
@@ -229,11 +229,12 @@ function placeCover(rng, grid, room, reserved, ob) {
   room.style = style.name;
   const target = Math.round(room.w * room.h * style.density);
   if (target === 0) return;
+  const budget = Math.floor(room.w * room.h * FLOOR.maxClutter * 0.8); // stay under the clutter gate
   const gapOk = (g) => g === 0 || g >= 2;
   let placed = 0;
   for (let tries = 0; tries < 80 && placed < target; tries++) {
     const [sw, sh] = rng.pick(FLOOR.shapes);
-    if (sw > room.w - 4 || sh > room.h - 4) continue;
+    if (sw > room.w - 4 || sh > room.h - 4 || placed + sw * sh > budget) continue;
     const x = rng.range(room.x, room.x + room.w - sw);
     const y = rng.range(room.y, room.y + room.h - sh);
     if (!gapOk(x - room.x) || !gapOk(room.x + room.w - (x + sw))) continue;
@@ -268,8 +269,8 @@ function buildAttempt(rng, w, h) {
   splitLeaves(rng, { x: 1, y: 1, w: w - 2, h: h - 2 }, leaves);
   if (leaves.length < FLOOR.minRooms || leaves.length > FLOOR.maxRooms) return null;
   const rooms = leaves.map((lf) => {
-    const rw = rng.range(FLOOR.minRoomW, lf.w - 2);
-    const rh = rng.range(FLOOR.minRoomH, lf.h - 2);
+    const rw = rng.range(FLOOR.minRoomW, Math.min(FLOOR.maxRoomW, lf.w - 2));
+    const rh = rng.range(FLOOR.minRoomH, Math.min(FLOOR.maxRoomH, lf.h - 2));
     const x = lf.x + 1 + rng.range(0, lf.w - 2 - rw);
     const y = lf.y + 1 + rng.range(0, lf.h - 2 - rh);
     return { x, y, w: rw, h: rh, cx: x + (rw >> 1), cy: y + (rh >> 1), style: 'open' };
@@ -281,23 +282,36 @@ function buildAttempt(rng, w, h) {
   const links = linkRooms(rng, rooms);
   for (const [i, j] of links) carveCorridor(grid, corr, rooms[i], rooms[j], rng);
 
-  // Spawn room is random. The exit goes in the room that is farthest to walk to.
-  const spawnRoom = rng.int(rooms.length);
+  // Spawn and exit sit at the two far ends of the floor: take a random room, find the room
+  // farthest from it by walking distance, then the room farthest from that one. Which end is
+  // the spawn is random. This keeps the walk to the stairs long on every seed.
+  const walkable = (x, y) => grid[y]?.[x] === 1;
+  const farthestFrom = (ri) => {
+    const d = distanceField(w, h, walkable, rooms[ri].cx, rooms[ri].cy);
+    let best = -1;
+    let bestD = -1;
+    rooms.forEach((r, i) => {
+      const di = d[r.cx + r.cy * w];
+      if (i !== ri && di > bestD) { bestD = di; best = i; }
+    });
+    return { room: best, dist: bestD };
+  };
+  const endA = farthestFrom(rng.int(rooms.length)).room;
+  const far = farthestFrom(endA);
+  if (far.room < 0 || far.dist < FLOOR.minExitPath) return null;
+  const swap = rng.chance(0.5);
+  const spawnRoom = swap ? far.room : endA;
+  const exitRoom = swap ? endA : far.room;
   const sp = { tx: rooms[spawnRoom].cx, ty: rooms[spawnRoom].cy };
-  const dist = distanceField(w, h, (x, y) => grid[y]?.[x] === 1, sp.tx, sp.ty);
-  let exitRoom = -1;
-  let far = -1;
-  rooms.forEach((r, i) => {
-    const d = dist[r.cx + r.cy * w];
-    if (i !== spawnRoom && d > far) { far = d; exitRoom = i; }
-  });
-  if (exitRoom < 0 || far < FLOOR.minExitPath) return null;
   const ex = { tx: rooms[exitRoom].cx, ty: rooms[exitRoom].cy };
 
   // Reserve the corridor tiles and the spawn and exit surroundings. Cover may sit next to a
   // corridor band that crosses a room, but never on it, so doors always stay open.
   const reserved = makeGrid(w, h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (corr[y][x]) reserved[y][x] = 1;
+  for (const r of rooms) {
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) reserved[r.cy + dy][r.cx + dx] = 1; // every room keeps a clear centre
+  }
   for (const p of [sp, ex]) {
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) reserved[p.ty + dy][p.tx + dx] = 1;
   }
@@ -362,8 +376,8 @@ export function qualityReport(floor) {
 // Build the floor for a seed. Same seed, same result. Tries up to FLOOR.maxAttempts layouts
 // derived from the seed and returns the first that passes every rule.
 export function generateFloor(seed, opts = {}) {
-  const w = opts.width ?? MAP_W;
-  const h = opts.height ?? MAP_H;
+  const w = opts.width ?? FLOOR_W;
+  const h = opts.height ?? FLOOR_H;
   let fallback = null;
   for (let attempt = 0; attempt < FLOOR.maxAttempts; attempt++) {
     const rng = createRng(mixSeed(seed >>> 0, attempt));

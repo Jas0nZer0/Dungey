@@ -1,17 +1,24 @@
 // M4: procedural floors. Run: node --test tests/
 import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { TILE, STEP, MAP_W, MAP_H, ENEMY_SIZE, PLAYER_SIZE } from '../src/config.js';
+import {
+  TILE, STEP, FLOOR_W, FLOOR_H, ENEMY_SIZE, PLAYER_SIZE, PLAYER_HP, PLAYER_SPEED, FLOOR_UNLOCK_TIME,
+  SPAWN_MIN_DIST, SPAWN_MAX_DIST,
+} from '../src/config.js';
+import { DIFFICULTY } from '../src/difficulty.config.js';
+import { directorAt } from '../src/director.js';
 import { FLOOR } from '../src/floorgen.config.js';
 import { createRng, mixSeed, floorSeed, parseSeed } from '../src/rng.js';
 import {
   generateFloor, connectivityReport, floorMetrics, snagReport, distanceField,
 } from '../src/floorgen.js';
-import { loadTiles, isFloor, map } from '../src/map.js';
+import {
+  loadTiles, isFloor, map, mapWidth, mapHeight,
+} from '../src/map.js';
 import { overlapsWall } from '../src/collision.js';
 import { player } from '../src/entities.js';
 import {
-  game, resetGame, updateGame, descend, spawnEnemy,
+  game, resetGame, updateGame, descend, spawnEnemy, unlockExit, exitTimeLeft, directorTime, enemyStats,
 } from '../src/game.js';
 
 const SEEDS = 1000;
@@ -51,8 +58,8 @@ test('the same seed always produces the same floor, and seeds produce different 
 
 test(`${SEEDS} generated seeds all pass the connectivity check`, () => {
   floors.forEach((f, s) => {
-    assert.equal(f.tiles.length, MAP_H);
-    for (const row of f.tiles) assert.equal(row.length, MAP_W);
+    assert.equal(f.tiles.length, FLOOR_H);
+    for (const row of f.tiles) assert.equal(row.length, FLOOR_W);
     const c = connectivityReport(f);
     assert.ok(c.border, `seed ${s}: border is not solid wall`);
     assert.ok(c.spawnOk, `seed ${s}: spawn is not on floor`);
@@ -71,9 +78,9 @@ test('connectivity holds for the real collision map: walk every room centre and 
   for (let s = 0; s < SEEDS; s += 10) {
     const f = floors[s];
     loadTiles(f.tiles);
-    const dist = distanceField(MAP_W, MAP_H, isFloor, f.spawn.tx, f.spawn.ty);
-    for (const r of f.rooms) assert.ok(dist[r.cx + r.cy * MAP_W] >= 0, `seed ${s}: room at ${r.x},${r.y} unreachable`);
-    assert.ok(dist[f.exit.tx + f.exit.ty * MAP_W] >= 0, `seed ${s}: exit unreachable`);
+    const dist = distanceField(FLOOR_W, FLOOR_H, isFloor, f.spawn.tx, f.spawn.ty);
+    for (const r of f.rooms) assert.ok(dist[r.cx + r.cy * FLOOR_W] >= 0, `seed ${s}: room at ${r.x},${r.y} unreachable`);
+    assert.ok(dist[f.exit.tx + f.exit.ty * FLOOR_W] >= 0, `seed ${s}: exit unreachable`);
   }
 });
 
@@ -85,12 +92,12 @@ test('player and enemy spawn points never land inside walls', () => {
     assert.ok(!overlapsWall(body(f.spawn.tx, f.spawn.ty, PLAYER_SIZE)), `seed ${s}: player spawn in a wall`);
     assert.ok(!overlapsWall(body(f.exit.tx, f.exit.ty, PLAYER_SIZE)), `seed ${s}: exit in a wall`);
     assert.ok(f.enemySpawns.length >= 20, `seed ${s}: only ${f.enemySpawns.length} enemy spawn points`);
-    const dist = distanceField(MAP_W, MAP_H, isFloor, f.spawn.tx, f.spawn.ty);
+    const dist = distanceField(FLOOR_W, FLOOR_H, isFloor, f.spawn.tx, f.spawn.ty);
     for (const [tx, ty] of f.enemySpawns) {
       enemyPoints++;
       assert.ok(isFloor(tx, ty), `seed ${s}: enemy spawn ${tx},${ty} is a wall`);
       assert.ok(!overlapsWall(body(tx, ty, ENEMY_SIZE)), `seed ${s}: enemy body at ${tx},${ty} overlaps a wall`);
-      assert.ok(dist[tx + ty * MAP_W] >= 0, `seed ${s}: enemy spawn ${tx},${ty} unreachable`);
+      assert.ok(dist[tx + ty * FLOOR_W] >= 0, `seed ${s}: enemy spawn ${tx},${ty} unreachable`);
     }
   });
   assert.ok(enemyPoints > SEEDS * 20);
@@ -202,11 +209,12 @@ test('floor n of a run is reproducible from the run seed', () => {
   assert.equal(map.map((r) => r.join('')).join('\n'), third);
 });
 
-test('stepping on the exit tile descends during updateGame, and the run clock keeps running', () => {
+test('stepping on the unlocked exit descends during updateGame, and the run clock keeps running', () => {
   const e = game.layout.exit;
   player.x = (e.tx + 0.5) * TILE;
   player.y = (e.ty + 0.5) * TILE;
   game.time = 50;
+  unlockExit('boss');
   updateGame(STEP);
   assert.equal(game.floor, 2);
   assert.ok(Math.abs(game.time - (50 + STEP)) < 1e-9);
@@ -234,4 +242,94 @@ test('enemies the director spawns never overlap a wall, on several floors', () =
     }
   }
   assert.ok(spawned >= 6 * 3 * 10, `only ${spawned} enemies spawned`);
+});
+
+test('floors are large: 120x80 tiles with plenty of rooms and a long walk to the stairs', () => {
+  for (const f of floors) {
+    assert.equal(f.width, 120);
+    assert.equal(f.height, 80);
+    assert.ok(f.rooms.length >= FLOOR.minRooms, `${f.rooms.length} rooms`);
+  }
+  resetGame({ seed: 9 });
+  assert.equal(mapWidth, 120);
+  assert.equal(mapHeight, 80);
+  // 180 px/s is 5.6 tiles/s. Even a perfectly direct walk to the stairs takes a while.
+  const tilesPerSec = PLAYER_SPEED / TILE;
+  const minWalk = Math.min(...floors.map((f) => connectivityReport(f).exitDist)) / tilesPerSec;
+  console.log(`# shortest walk to the stairs over ${SEEDS} seeds: ${minWalk.toFixed(1)} s at full speed`);
+  assert.ok(minWalk >= 20, `shortest walk ${minWalk} s`);
+});
+
+test('the stairs stay locked until the floor timer ends, then unlock without a boss', () => {
+  const e = game.layout.exit;
+  player.x = (e.tx + 0.5) * TILE;
+  player.y = (e.ty + 0.5) * TILE;
+  game.iframes = 1e9;
+  updateGame(STEP);
+  assert.equal(game.floor, 1, 'locked stairs must not descend');
+  assert.ok(exitTimeLeft() > FLOOR_UNLOCK_TIME - 1);
+  game.floorTime = FLOOR_UNLOCK_TIME - STEP / 2;
+  updateGame(STEP); // the timer ends and, with the player on the stairs, the descent follows
+  assert.equal(game.floor, 2);
+  assert.equal(game.exitUnlocked, false, 'the next floor starts locked');
+  assert.equal(game.floorTime, 0);
+});
+
+test('unlockExit("boss") opens the stairs at once (hook for M5)', () => {
+  const e = game.layout.exit;
+  player.x = (e.tx + 0.5) * TILE;
+  player.y = (e.ty + 0.5) * TILE;
+  updateGame(STEP);
+  assert.equal(game.floor, 1);
+  unlockExit('boss');
+  assert.equal(game.exitUnlocked, 'boss');
+  updateGame(STEP);
+  assert.equal(game.floor, 2);
+});
+
+test('deeper floors raise enemy difficulty; player stats and the run clock do not change', () => {
+  game.time = 100;
+  const f1 = { t: directorTime(), s: enemyStats(directorTime()), d: directorAt(directorTime()) };
+  descend();
+  descend();
+  assert.equal(game.floor, 3);
+  assert.equal(directorTime(), 100 + 2 * DIFFICULTY.floorOffset);
+  const f3 = { s: enemyStats(directorTime()), d: directorAt(directorTime()) };
+  assert.ok(f3.s.speed > f1.s.speed && f3.s.hp > f1.s.hp, 'enemies should be tougher');
+  assert.ok(f3.d.spawnInterval < f1.d.spawnInterval && f3.d.cap > f1.d.cap);
+  assert.equal(game.time, 100, 'run clock unchanged');
+  // Player: nothing about the player's stats depends on the floor.
+  assert.equal(game.hp, PLAYER_HP);
+  assert.equal(player.w, PLAYER_SIZE);
+  assert.equal(player.h, PLAYER_SIZE);
+});
+
+test('floor depth alone does not trigger overtime scoring or the overtime summary', () => {
+  game.time = 60;
+  for (let i = 0; i < 10; i++) descend();
+  assert.ok(directorTime() > DIFFICULTY.softCap, 'the director curve is deep in overtime territory');
+  assert.equal(directorAt(directorTime()).phase, 'overtime');
+  // But the run clock is at 1:00, so the summary does not claim overtime.
+  assert.equal(game.floor, 11);
+  const over = Math.max(0, game.time + game.timeOffset - DIFFICULTY.softCap);
+  assert.equal(over, 0);
+});
+
+test('enemies spawn in a ring around the player on a large floor', () => {
+  game.rng = createRng(31).next;
+  game.iframes = 1e9;
+  let n = 0;
+  for (let wave = 0; wave < 60; wave++) {
+    game.enemies.length = 0;
+    game.spawnCd = 0;
+    game.time = 300;
+    updateGame(0.001);
+    for (const e of game.enemies) {
+      const d = Math.hypot(e.x - player.x, e.y - player.y);
+      assert.ok(d >= SPAWN_MIN_DIST - 40, `spawned ${d} px away (too close)`);
+      assert.ok(d <= SPAWN_MAX_DIST + 40, `spawned ${d} px away (too far)`);
+      n++;
+    }
+  }
+  assert.ok(n >= 60, `only ${n} spawns`);
 });

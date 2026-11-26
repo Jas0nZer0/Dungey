@@ -4,7 +4,7 @@ import { map, mapWidth, mapHeight } from './map.js';
 import { player } from './entities.js';
 import { camera } from './camera.js';
 import { mouse } from './input.js';
-import { game, runSummary, directorTime } from './game.js';
+import { game, runSummary, clockTime, exitTimeLeft } from './game.js';
 import { DIFFICULTY } from './difficulty.config.js';
 
 const canvas = document.getElementById('game');
@@ -58,8 +58,9 @@ function drawExit() {
   const sx = e.tx * TILE - camera.x;
   const sy = e.ty * TILE - camera.y;
   if (sx < -TILE || sx > VIEW_W || sy < -TILE || sy > VIEW_H) return;
-  const pulse = 0.55 + 0.25 * Math.sin(game.time * 4);
-  ctx.fillStyle = `rgba(120,220,255,${pulse})`;
+  const locked = !game.exitUnlocked;
+  const pulse = locked ? 0.35 : 0.55 + 0.25 * Math.sin(game.time * 4);
+  ctx.fillStyle = locked ? `rgba(150,150,160,${pulse})` : `rgba(120,220,255,${pulse})`;
   ctx.fillRect(sx + 2, sy + 2, TILE - 4, TILE - 4);
   ctx.fillStyle = '#0b1c24';
   ctx.beginPath();
@@ -117,8 +118,14 @@ function drawHud() {
   ctx.fillText(`Time ${clock(game.time)}   Kills ${game.kills}   Score ${Math.floor(game.score)}`, 12, 46);
   ctx.textAlign = 'right';
   ctx.fillText(`Floor ${game.floor}   Seed ${game.seed}`, VIEW_W - 12, 24);
+  if (game.layout.exit) {
+    const left = Math.ceil(exitTimeLeft());
+    ctx.fillStyle = game.exitUnlocked ? '#8fe3ff' : '#fff';
+    ctx.fillText(game.exitUnlocked ? 'Stairs open' : `Stairs unlock in ${clock(left)} or when the boss falls`, VIEW_W - 12, 46);
+    ctx.fillStyle = '#fff';
+  }
   ctx.textAlign = 'left';
-  if (directorTime() > DIFFICULTY.softCap) {
+  if (clockTime() > DIFFICULTY.softCap) {
     // Pulse so the player notices the exponential phase has begun.
     ctx.fillStyle = Math.floor(game.time * 2) % 2 === 0 ? '#ff5a5a' : '#ffb0b0';
     ctx.fillText('OVERTIME: the dark is closing in', 12, 68);

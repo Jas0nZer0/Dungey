@@ -1,11 +1,10 @@
 // Tile map, 48x32 tiles (1536x1024 px). '#' is wall, '.' is floor.
 // `map` is one array that every module reads. It starts as the hand-built test arena below;
-// loadTiles() overwrites it in place with a generated floor (src/floorgen.js), so the exports
-// and the size never change. Out-of-bounds counts as wall.
-import { MAP_W, MAP_H } from './config.js';
-
-const W = MAP_W;
-const H = MAP_H;
+// loadTiles() overwrites it in place with a generated floor (src/floorgen.js) and updates
+// `mapWidth` and `mapHeight` (live bindings, so read them at call time, not at import time).
+// Out-of-bounds counts as wall.
+const W = 48; // the hand-built arena size; generated floors are larger (config FLOOR_W x FLOOR_H)
+const H = 32;
 const grid = Array.from({ length: H }, () => Array(W).fill('.'));
 
 function fill(x0, y0, x1, y1, ch = '#') {
@@ -47,16 +46,22 @@ export const ARENA_ROWS = grid.map((r) => r.join(''));
 export const ARENA_SPAWN = { tx: 2, ty: 2 };
 
 export const map = grid;
-export const mapWidth = W;
-export const mapHeight = H;
+export let mapWidth = W;
+export let mapHeight = H;
 
-// Copy rows of '#' and '.' (strings or arrays) into the live map.
+// Replace the live map with rows of '#' and '.' (strings or arrays), resizing if needed.
 export function loadTiles(rows) {
-  if (rows.length !== H) throw new Error(`expected ${H} rows, got ${rows.length}`);
-  for (let y = 0; y < H; y++) {
-    if (rows[y].length !== W) throw new Error(`row ${y}: expected ${W} tiles, got ${rows[y].length}`);
-    for (let x = 0; x < W; x++) grid[y][x] = rows[y][x];
+  const h = rows.length;
+  const w = rows[0].length;
+  grid.length = h;
+  for (let y = 0; y < h; y++) {
+    if (rows[y].length !== w) throw new Error(`row ${y}: expected ${w} tiles, got ${rows[y].length}`);
+    const row = grid[y] ?? (grid[y] = []);
+    row.length = w;
+    for (let x = 0; x < w; x++) row[x] = rows[y][x];
   }
+  mapWidth = w;
+  mapHeight = h;
 }
 
 export function loadArena() {

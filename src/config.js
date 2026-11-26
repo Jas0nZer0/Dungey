@@ -1,7 +1,7 @@
 // Shared constants.
 export const TILE = 32;
-export const MAP_W = 48; // tiles; every floor is this size, so mapWidth/mapHeight stay constants
-export const MAP_H = 32;
+export const FLOOR_W = 120; // tiles; every generated floor is this size (the test arena is 48x32)
+export const FLOOR_H = 80;
 export const VIEW_W = 960;
 export const VIEW_H = 540;
 export const UPDATE_HZ = 60;
@@ -31,3 +31,7 @@ export const ENEMY_KNOCKBACK = 6; // px pushed back per hit
 
 // Spawning.
 export const SPAWN_MIN_DIST = 320; // px from the player, so spawns land off screen-ish
+export const SPAWN_MAX_DIST = 900; // px; floors are large, so enemies spawn in a ring around the player
+
+// Floors. The stairs unlock when the floor timer ends or the floor's boss dies (boss: M5).
+export const FLOOR_UNLOCK_TIME = 120; // s on a floor before the stairs unlock

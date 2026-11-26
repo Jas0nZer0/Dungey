@@ -3,10 +3,10 @@
 import {
   TILE, PLAYER_HP, PLAYER_IFRAMES, FIRE_INTERVAL, BULLET_SPEED, BULLET_RADIUS,
   BULLET_LIFE, BULLET_DAMAGE, ENEMY_SIZE, ENEMY_CONTACT_DAMAGE, ENEMY_FLASH, ENEMY_KNOCKBACK,
-  SPAWN_MIN_DIST,
+  SPAWN_MIN_DIST, SPAWN_MAX_DIST, FLOOR_UNLOCK_TIME,
 } from './config.js';
 import { DIFFICULTY } from './difficulty.config.js';
-import { directorAt } from './director.js';
+import { directorAt, phaseAt } from './director.js';
 import { createGrid } from './spatial.js';
 import { isFloor, mapWidth, mapHeight, loadTiles, loadArena, ARENA_SPAWN } from './map.js';
 import { generateFloor } from './floorgen.js';
@@ -14,7 +14,9 @@ import { floorSeed } from './rng.js';
 import { moveBody } from './collision.js';
 import { player } from './entities.js';
 
-const grid = createGrid(mapWidth * TILE, mapHeight * TILE, TILE);
+// Rebuilt whenever the map size changes (arena 48x32, floors larger).
+let grid = createGrid(mapWidth * TILE, mapHeight * TILE, TILE);
+const rebuildGrid = () => { grid = createGrid(mapWidth * TILE, mapHeight * TILE, TILE); };
 const nearBuf = [];
 
 export const game = {
@@ -32,6 +34,8 @@ export const game = {
   rng: Math.random, // tests replace this for determinism
   seed: 0, // run seed: with it, every floor of the run can be regenerated
   floor: 1, // floor number within the run, starting at 1
+  floorTime: 0, // seconds spent on this floor; resets on descend (the run clock `time` does not)
+  exitUnlocked: false, // the stairs work once the floor timer ends or the boss dies
   layout: arenaLayout(), // the current floor: { spawn, exit, enemySpawns, rooms, ... } (exit is null in the arena)
 };
 
@@ -59,9 +63,23 @@ function loadFloor(n) {
   game.floor = n;
   game.layout = generateFloor(floorSeed(game.seed, n));
   loadTiles(game.layout.tiles);
+  rebuildGrid();
+  game.floorTime = 0;
+  game.exitUnlocked = false;
   placePlayer(game.layout.spawn);
   game.projectiles.length = 0;
   game.enemies.length = 0;
+}
+
+// Unlock the stairs. `why` is 'timer' or 'boss'. M5 calls unlockExit('boss') when the
+// floor's boss dies.
+export function unlockExit(why = 'boss') {
+  game.exitUnlocked = why;
+}
+
+// Seconds until the timer unlocks the stairs (0 once unlocked).
+export function exitTimeLeft() {
+  return game.exitUnlocked ? 0 : Math.max(0, FLOOR_UNLOCK_TIME - game.floorTime);
 }
 
 // Go down to the next floor.
@@ -78,7 +96,10 @@ export function resetGame({ seed = randomSeed(), arena = false } = {}) {
   });
   if (arena) {
     loadArena();
+    rebuildGrid();
     game.layout = arenaLayout();
+    game.floorTime = 0;
+    game.exitUnlocked = false;
     placePlayer(game.layout.spawn);
     game.projectiles.length = 0;
     game.enemies.length = 0;
@@ -87,9 +108,15 @@ export function resetGame({ seed = randomSeed(), arena = false } = {}) {
   }
 }
 
-// The time the difficulty director reads: run time plus the extension offset.
-export function directorTime() {
+// Run clock plus the extension offset. Overtime and the run summary read this.
+export function clockTime() {
   return game.time + game.timeOffset;
+}
+
+// The time the difficulty director reads: the clock plus DIFFICULTY.floorOffset per floor
+// below the first. Deeper floors spawn tougher enemies; the player's stats never change.
+export function directorTime() {
+  return clockTime() + (game.floor - 1) * DIFFICULTY.floorOffset;
 }
 
 // Chaser stats for an enemy spawned at the given director time (seconds).
@@ -107,7 +134,7 @@ export function spawnEnemy(x, y) {
 
 // End-of-run numbers for the summary screen.
 export function runSummary() {
-  const over = Math.max(0, directorTime() - DIFFICULTY.softCap);
+  const over = Math.max(0, clockTime() - DIFFICULTY.softCap);
   return {
     time: game.time,
     kills: game.kills,
@@ -117,19 +144,25 @@ export function runSummary() {
   };
 }
 
+const ring = [];
+
 // Pick a spawn point from the floor's list (open tiles away from the player's start room)
-// that is far enough from the player. Gives up after a few tries.
+// in a ring around the player: at least SPAWN_MIN_DIST and at most SPAWN_MAX_DIST away, so
+// enemies on a large floor arrive in seconds. If no point lies in the ring, any point at
+// least SPAWN_MIN_DIST away will do.
 function trySpawn() {
   const points = game.layout.enemySpawns;
-  if (!points.length) return;
-  for (let i = 0; i < 20; i++) {
-    const [tx, ty] = points[Math.floor(game.rng() * points.length)];
-    const x = (tx + 0.5) * TILE;
-    const y = (ty + 0.5) * TILE;
-    if (Math.hypot(x - player.x, y - player.y) < SPAWN_MIN_DIST) continue;
-    spawnEnemy(x, y);
-    return;
+  ring.length = 0;
+  let far = -1;
+  for (let i = 0; i < points.length; i++) {
+    const d = Math.hypot((points[i][0] + 0.5) * TILE - player.x, (points[i][1] + 0.5) * TILE - player.y);
+    if (d < SPAWN_MIN_DIST) continue;
+    if (d <= SPAWN_MAX_DIST) ring.push(i);
+    else far = i;
   }
+  const pick = ring.length ? ring[Math.floor(game.rng() * ring.length)] : far;
+  if (pick < 0) return;
+  spawnEnemy((points[pick][0] + 0.5) * TILE, (points[pick][1] + 0.5) * TILE);
 }
 
 function fire() {
@@ -173,7 +206,7 @@ function updateProjectiles(dt) {
     if (dead) list.splice(i, 1);
   }
   const sc = DIFFICULTY.score;
-  const mult = directorAt(directorTime()).phase === 'overtime' ? sc.overtimeMultiplier : 1;
+  const mult = phaseAt(clockTime()) === 'overtime' ? sc.overtimeMultiplier : 1;
   const alive = [];
   for (const e of game.enemies) {
     if (e.hp > 0) {
@@ -243,8 +276,10 @@ export function updateGame(dt) {
   if (game.state !== 'playing') return;
   game.time += dt;
   game.score += DIFFICULTY.score.perSecond * dt;
+  game.floorTime += dt;
+  if (!game.exitUnlocked && game.floorTime >= FLOOR_UNLOCK_TIME) unlockExit('timer');
   const exit = game.layout.exit;
-  if (exit && Math.floor(player.x / TILE) === exit.tx && Math.floor(player.y / TILE) === exit.ty) {
+  if (exit && game.exitUnlocked && Math.floor(player.x / TILE) === exit.tx && Math.floor(player.y / TILE) === exit.ty) {
     descend();
     return;
   }

@@ -1,17 +1,19 @@
 // Floor generator tuning. Plain data; edit the numbers to change how floors look.
 export const FLOOR = {
   // BSP leaves: the map is split until a leaf cannot hold two leaves of this size.
-  minLeafW: 12,
-  minLeafH: 10,
-  stopArea: 330, // a leaf this small or smaller may stop splitting early...
-  stopChance: 0.4, // ...with this probability, so room counts vary
+  minLeafW: 18,
+  minLeafH: 15,
+  stopArea: 700, // a leaf this small or smaller may stop splitting early...
+  stopChance: 0.3, // ...with this probability, so room counts vary
   // Rooms sit inside a leaf with a 1-tile margin, so two rooms never touch.
-  minRoomW: 7,
-  minRoomH: 6,
+  minRoomW: 8,
+  minRoomH: 7,
+  maxRoomW: 22,
+  maxRoomH: 16,
   corridorWidth: 2, // tiles. 1-wide passages are rejected (enemies snag in them).
-  extraLoopChance: 0.35, // chance per candidate extra link between near rooms (makes loops)
-  maxLinkGap: 9, // extra links only join rooms whose rects are this close (tiles)
-  minExitPath: 28, // spawn to exit must be at least this many tiles of walking
+  extraLoopChance: 0.2, // chance per candidate extra link between near rooms (makes loops)
+  maxLinkGap: 12, // extra links only join rooms whose rects are this close (tiles)
+  minExitPath: 120, // spawn to exit must be at least this many tiles of walking
   // Cover. Obstacles keep a 2-tile margin from room walls and from each other, so cover never
   // creates a 1-wide slot or an alcove. Density is the share of room area covered.
   styles: [
@@ -27,7 +29,7 @@ export const FLOOR = {
   minLaneShare: 0.75, // at least this share of rooms has a fire lane
   maxOpenShare: 0.25, // at most this share of rooms has no cover at all
   maxClutter: 0.22, // no room may have more than this share of its area as cover
-  minRooms: 5,
-  maxRooms: 10,
+  minRooms: 12,
+  maxRooms: 40,
   maxAttempts: 60,
 };
