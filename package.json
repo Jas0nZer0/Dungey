@@ -2,5 +2,5 @@
   "name": "dungey",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test tests/collision.test.mjs" }
+  "scripts": { "test": "node --test tests/*.test.mjs" }
 }

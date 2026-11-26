@@ -4,6 +4,7 @@ import { map, mapWidth, mapHeight } from './map.js';
 import { player } from './entities.js';
 import { camera } from './camera.js';
 import { mouse } from './input.js';
+import { game } from './game.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -51,7 +52,8 @@ function drawMap() {
 function drawPlayer() {
   const sx = Math.round(player.x - camera.x);
   const sy = Math.round(player.y - camera.y);
-  ctx.fillStyle = '#f4c542';
+  const blink = game.iframes > 0 && Math.floor(game.iframes * 20) % 2 === 0;
+  ctx.fillStyle = blink ? '#ff5a5a' : '#f4c542';
   ctx.fillRect(sx - player.w / 2, sy - player.h / 2, player.w, player.h);
   // Facing indicator: a line from the centre toward the aim point.
   const c = Math.cos(player.angle);
@@ -62,6 +64,37 @@ function drawPlayer() {
   ctx.moveTo(sx + c * 6, sy + s * 6);
   ctx.lineTo(sx + c * 20, sy + s * 20);
   ctx.stroke();
+}
+
+function drawEnemies() {
+  for (const e of game.enemies) {
+    const sx = Math.round(e.x - camera.x);
+    const sy = Math.round(e.y - camera.y);
+    if (sx < -20 || sx > VIEW_W + 20 || sy < -20 || sy > VIEW_H + 20) continue;
+    ctx.fillStyle = e.flash > 0 ? '#fff' : '#b33a3a';
+    ctx.fillRect(sx - e.w / 2, sy - e.h / 2, e.w, e.h);
+  }
+}
+
+function drawProjectiles() {
+  ctx.fillStyle = '#ffe98a';
+  for (const b of game.projectiles) {
+    ctx.fillRect(Math.round(b.x - camera.x) - 3, Math.round(b.y - camera.y) - 3, 6, 6);
+  }
+}
+
+function drawHud() {
+  ctx.textAlign = 'left';
+  ctx.font = '16px monospace';
+  ctx.fillStyle = '#fff';
+  const secs = Math.floor(game.time);
+  ctx.fillText(`HP ${'♥'.repeat(Math.max(0, game.hp))}`, 12, 24);
+  ctx.fillText(`Kills ${game.kills}   Time ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`, 12, 46);
+  if (game.iframes > 0) {
+    ctx.strokeStyle = `rgba(255,60,60,${Math.min(1, game.iframes)})`;
+    ctx.lineWidth = 10;
+    ctx.strokeRect(0, 0, VIEW_W, VIEW_H);
+  }
 }
 
 function drawCrosshair() {
@@ -86,8 +119,24 @@ export function render(paused) {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   drawMap();
+  drawEnemies();
+  drawProjectiles();
   drawPlayer();
+  drawHud();
   drawCrosshair();
+
+  if (game.state === 'dead') {
+    ctx.fillStyle = 'rgba(80,0,0,0.65)';
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.font = '40px monospace';
+    ctx.fillText('YOU DIED', VIEW_W / 2, VIEW_H / 2 - 10);
+    ctx.font = '16px monospace';
+    ctx.fillText(`Kills ${game.kills}   Time ${Math.floor(game.time)}s`, VIEW_W / 2, VIEW_H / 2 + 20);
+    ctx.fillText('Press R or Enter to restart', VIEW_W / 2, VIEW_H / 2 + 48);
+    drawCrosshair();
+  }
 
   if (paused) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
