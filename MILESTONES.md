@@ -36,7 +36,7 @@ Defaults apply until you change them. Update this section when you decide.
 
 | Decision | Default | Affects |
 |---|---|---|
-| Resolution and embed size | 960x540 (16:9) | M0, M7, M10 |
+| Resolution and embed size | 960x540 (16:9). Applied in M0 | M0, M7, M10 |
 | Art source | Claude-generated art. Pixel art is likely. Final style decided at M7 | M7 |
 | Input | Keyboard and mouse only. Gamepad deferred | M1, M8 |
 | M4 position | Before M5. Move after M6 if you want build depth first | M4, M5, M6 |
@@ -44,16 +44,16 @@ Defaults apply until you change them. Update this section when you decide.
 ## Milestones
 
 ### M0. Foundations
-**Status:** todo
+**Status:** done
 **Scope:** Split `src/main.js` into modules (input, loop, map, entities, render). Add a fixed-timestep update loop, mouse and keyboard input, canvas scaling, pause.
 **Done when:**
-- [ ] Update runs at a fixed 60 Hz independent of display refresh rate.
-- [ ] Canvas scales cleanly when the window resizes.
-- [ ] Pause works on `Esc` and on tab blur.
-- [ ] Visible behaviour matches the scaffold.
+- [x] Update runs at a fixed 60 Hz independent of display refresh rate.
+- [x] Canvas scales cleanly when the window resizes.
+- [x] Pause works on `Esc` and on tab blur.
+- [x] Visible behaviour matches the scaffold.
 
 **Risk:** refactor sprawl. Restructure only. Add no features.
-**Handoff:**
+**Handoff:** Layout: `src/config.js` (TILE=32, VIEW_W=960, VIEW_H=540, UPDATE_HZ=60, STEP=1/60), `map.js` (`map`, `mapWidth`, `mapHeight`, `isFloor(x,y)`), `input.js` (`initInput(canvas, clientToGame)`, `isHeld(key)`, `drainPresses()` returns non-repeat key taps since last call, `clearInput()`, `mouse {x,y,down}` in game-space coords), `entities.js` (`player {x,y}` in tile units, `updateEntities(presses)`), `loop.js` (`startLoop({update, render, onPause})`, `isPaused/setPaused/togglePause`, `stats.updates` counter), `render.js` (`initRender()`, `render(paused)`, `resize()`, `clientToGame(cx,cy)`, `canvas`), `main.js` wires them. Behaviour: update runs at fixed 60 Hz via accumulator (frame dt clamped to 0.25 s; measured 59.5 updates/s). Canvas is 960x540 internal; the 20x15 map is centred with whole-pixel offsets. CSS scaling keeps 16:9, integer scale at 1x and above, fractional below. Esc toggles pause (handled in a keydown listener, not in update). Window blur and `document.hidden` pause; resume is Esc only. Pausing clears held keys and queued taps. Player still moves one tile per key tap (scaffold behaviour); M1 replaces this with velocity movement. Mouse state is tracked but unused. Tuning: none. Debug hook: `window.__dungey.stats`. Known bugs: none. Not tested on Firefox or Safari (M9).
 
 ### M1. Twin-stick movement
 **Status:** todo
