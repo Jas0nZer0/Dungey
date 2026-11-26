@@ -4,7 +4,7 @@ import { map, mapWidth, mapHeight } from './map.js';
 import { player } from './entities.js';
 import { camera } from './camera.js';
 import { mouse } from './input.js';
-import { game, runSummary, clockTime, exitTimeLeft } from './game.js';
+import { game, runSummary, clockTime, bossTimeLeft } from './game.js';
 import { DIFFICULTY } from './difficulty.config.js';
 import { ENEMIES, BOSS } from './enemies.config.js';
 import { stairsArrow } from './arrow.js';
@@ -314,9 +314,10 @@ function drawHud() {
   ctx.textAlign = 'right';
   ctx.fillText(`Floor ${game.floor}   Seed ${game.seed}`, VIEW_W - 12, 24);
   if (game.layout.exit) {
-    const left = Math.ceil(exitTimeLeft());
+    let line = 'Boss slain: stairs open';
+    if (!game.exitUnlocked) line = game.boss ? 'Kill the boss to unlock the stairs' : `The boss appears in ${clock(Math.ceil(bossTimeLeft()))}`;
     ctx.fillStyle = game.exitUnlocked ? '#8fe3ff' : '#fff';
-    ctx.fillText(game.exitUnlocked ? (game.exitUnlocked === 'boss' ? 'Boss slain: stairs open' : 'Stairs open') : `Stairs unlock in ${clock(left)} or when the boss falls`, VIEW_W - 12, 46);
+    ctx.fillText(line, VIEW_W - 12, 46);
     ctx.fillStyle = '#fff';
   }
   ctx.textAlign = 'left';

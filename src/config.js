@@ -33,5 +33,6 @@ export const ENEMY_KNOCKBACK = 6; // px pushed back per hit
 export const SPAWN_MIN_DIST = 320; // px from the player, so spawns land off screen-ish
 export const SPAWN_MAX_DIST = 900; // px; floors are large, so enemies spawn in a ring around the player
 
-// Floors. The stairs unlock when the floor timer ends or the floor's boss dies (boss: M5).
-export const FLOOR_UNLOCK_TIME = 120; // s on a floor before the stairs unlock
+// Floors. The boss spawns this many seconds after arriving on a floor, and only its death
+// unlocks the stairs. The stairs never lock again, not even in overtime.
+export const BOSS_SPAWN_TIME = 120; // s on a floor before the boss appears

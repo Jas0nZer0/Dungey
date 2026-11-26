@@ -1,7 +1,7 @@
 // M5: shared flow field, pathing around walls, and its cost. Run: node --test tests/
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TILE, STEP, FLOOR_W, FLOOR_H } from '../src/config.js';
+import { TILE, STEP, FLOOR_W, FLOOR_H, BOSS_SPAWN_TIME } from '../src/config.js';
 import { ENEMIES, BOSS } from '../src/enemies.config.js';
 import { generateFloor } from '../src/floorgen.js';
 import { createRng } from '../src/rng.js';
@@ -179,6 +179,8 @@ test(`${SEEDS} seeds: the 30 px boss walks from its hiding room to a stationary 
     game.fireCd = 1e9;
     game.iframes = 1e9;
     const f = game.layout;
+    game.floorTime = BOSS_SPAWN_TIME;
+    updateGame(STEP / 1000); // the boss appears
     const b = game.boss;
     b.state = 'walk';
     b.stateT = 1e9; // never attack: this measures walking only

@@ -1,7 +1,7 @@
 // M5: the stairs arrow. Run: node --test tests/
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TILE, STEP, VIEW_W, VIEW_H, FLOOR_UNLOCK_TIME } from '../src/config.js';
+import { TILE, STEP, VIEW_W, VIEW_H, BOSS_SPAWN_TIME } from '../src/config.js';
 import { stairsArrow, ARROW } from '../src/arrow.js';
 import { createRng } from '../src/rng.js';
 import { player } from '../src/entities.js';
@@ -14,8 +14,8 @@ test('no arrow while the stairs are locked, or when the floor has no stairs', ()
   const exit = { tx: 50, ty: 40 };
   assert.equal(stairsArrow(100, 100, exit, { x: 0, y: 0 }, false), null);
   assert.equal(stairsArrow(100, 100, exit, { x: 0, y: 0 }, 0), null);
-  assert.equal(stairsArrow(100, 100, null, { x: 0, y: 0 }, 'timer'), null);
-  assert.notEqual(stairsArrow(100, 100, exit, { x: 0, y: 0 }, 'timer'), null);
+  assert.equal(stairsArrow(100, 100, null, { x: 0, y: 0 }, 'boss'), null);
+  assert.notEqual(stairsArrow(100, 100, exit, { x: 0, y: 0 }, 'boss'), null);
   assert.notEqual(stairsArrow(100, 100, exit, { x: 0, y: 0 }, 'boss'), null);
 });
 
@@ -40,12 +40,12 @@ test('the arrow always stays on screen, wherever the player stands and wherever 
     const py = rng.range(40, 2500);
     // Any camera the game can produce, including the clamped edges, puts the player on screen.
     const cam = { x: Math.max(0, Math.min(3840 - VIEW_W, px - VIEW_W / 2 + rng.range(-300, 300))), y: Math.max(0, Math.min(2560 - VIEW_H, py - VIEW_H / 2 + rng.range(-200, 200))) };
-    const a = stairsArrow(px, py, { tx: rng.int(120), ty: rng.int(80) }, cam, 'timer');
+    const a = stairsArrow(px, py, { tx: rng.int(120), ty: rng.int(80) }, cam, 'boss');
     assert.ok(a.x >= ARROW.margin && a.x <= VIEW_W - ARROW.margin, `x ${a.x}`);
     assert.ok(a.y >= ARROW.margin && a.y <= VIEW_H - ARROW.margin, `y ${a.y}`);
   }
   // A player jammed against the top-left corner of the screen with the stairs up and left.
-  const a = stairsArrow(10, 10, { tx: 0, ty: 0 }, { x: 0, y: 0 }, 'timer');
+  const a = stairsArrow(10, 10, { tx: 0, ty: 0 }, { x: 0, y: 0 }, 'boss');
   assert.ok(a.x >= ARROW.margin && a.y >= ARROW.margin);
 });
 
@@ -57,28 +57,31 @@ test('the arrow sits next to the player, and moves in close when the stairs are 
   assert.ok(Math.hypot(near.x - (1480 - cam.x), near.y - (1270 - cam.y)) < ARROW.ring);
 });
 
-test('in a run: hidden at the start of a floor, shown once the timer or the boss unlocks, hidden again on the next floor', () => {
+test('in a run: hidden until the boss dies (not at its spawn), hidden again on the next floor', () => {
   resetGame({ seed: 31 });
   game.spawnCd = 1e9;
   game.fireCd = 1e9;
+  game.iframes = 1e9;
   const arrow = () => stairsArrow(player.x, player.y, game.layout.exit, camera, game.exitUnlocked);
   assert.equal(arrow(), null);
   updateGame(STEP);
   assert.equal(arrow(), null, 'locked');
-  unlockExit('boss');
+  game.floorTime = BOSS_SPAWN_TIME;
+  updateGame(STEP);
+  assert.ok(game.boss);
+  assert.equal(arrow(), null, 'the boss spawning does not show the arrow');
+  game.boss.hp = 0;
+  updateGame(STEP);
   const a = arrow();
-  assert.ok(a);
+  assert.ok(a, 'the boss dying turns it on');
   // Through walls: the bearing ignores the map, so it matches the raw line to the exit tile.
   const e = game.layout.exit;
   assert.ok(Math.abs(a.angle - Math.atan2((e.ty + 0.5) * TILE - player.y, (e.tx + 0.5) * TILE - player.x)) < 1e-9);
   descend();
   assert.equal(arrow(), null, 'a new floor locks the stairs again, so the arrow goes away');
-  game.floorTime = FLOOR_UNLOCK_TIME - 0.01;
-  updateGame(STEP * 2);
-  assert.ok(arrow(), 'the floor timer also turns it on');
   // Arena has no stairs, so no arrow.
   resetGame({ arena: true });
-  unlockExit('timer');
+  unlockExit('boss');
   assert.equal(stairsArrow(player.x, player.y, game.layout.exit, camera, game.exitUnlocked), null);
   assert.ok(view.w > 0);
 });

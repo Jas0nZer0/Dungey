@@ -1,7 +1,7 @@
 // M5: enemy roster and boss. Run: node --test tests/
 import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { TILE, STEP, PLAYER_SPEED, PLAYER_HP, FLOOR_UNLOCK_TIME, BULLET_DAMAGE } from '../src/config.js';
+import { TILE, STEP, PLAYER_SPEED, PLAYER_HP, BOSS_SPAWN_TIME, BULLET_DAMAGE } from '../src/config.js';
 import { DIFFICULTY } from '../src/difficulty.config.js';
 import { directorAt } from '../src/director.js';
 import {
@@ -431,16 +431,24 @@ test('boss attacks all show a tell first: every attack has a nonzero windup', ()
 
 // ---------- stairs unlock ----------
 
-test('killing the boss unlocks the stairs early, ahead of the floor timer', () => {
+test('the boss spawns after 2:00 on the floor, and only its death unlocks the stairs', () => {
   resetGame({ seed: 13 });
   game.spawnCd = 1e9;
   game.fireCd = 1e9;
-  const b = game.boss;
-  assert.ok(b && game.enemies.includes(b), 'every floor starts with its boss');
-  assert.equal(game.exitUnlocked, false);
+  game.iframes = 1e9;
+  assert.equal(game.boss, null, 'no boss at the start of a floor');
   run(secs(2));
-  assert.equal(game.exitUnlocked, false, 'locked while the boss lives');
-  assert.ok(game.floorTime < FLOOR_UNLOCK_TIME);
+  assert.equal(game.boss, null);
+  game.floorTime = BOSS_SPAWN_TIME - 0.05;
+  run(5);
+  const b = game.boss;
+  assert.ok(b && game.enemies.includes(b), 'the boss appears at 2:00');
+  assert.equal(b.state, 'dormant');
+  assert.equal(game.exitUnlocked, false);
+  game.floorTime += 500;
+  run(secs(1));
+  assert.equal(game.exitUnlocked, false, 'time alone never unlocks the stairs');
+  assert.equal(game.boss, b, 'and the boss does not respawn');
   b.hp = 0;
   run(1);
   assert.equal(game.exitUnlocked, 'boss');
@@ -448,20 +456,27 @@ test('killing the boss unlocks the stairs early, ahead of the floor timer', () =
   assert.ok(game.bossDefeated);
   assert.ok(!game.enemies.includes(b));
   assert.ok(game.kills >= 1 && game.score > 0);
-  // The next floor has a fresh boss and locks the stairs again.
+  run(secs(2));
+  assert.equal(game.boss, null, 'a dead boss stays dead on this floor');
+  // The next floor starts with no boss and locked stairs.
   descend();
   assert.equal(game.exitUnlocked, false);
-  assert.ok(game.boss && !game.bossDefeated);
+  assert.equal(game.boss, null);
+  assert.ok(!game.bossDefeated);
 });
 
-test('the floor timer still unlocks the stairs if the boss is never found', () => {
+test('the boss also spawns in overtime, and killing it still opens the stairs', () => {
   resetGame({ seed: 14 });
   game.spawnCd = 1e9;
   game.fireCd = 1e9;
-  game.floorTime = FLOOR_UNLOCK_TIME - 0.05;
-  run(5);
-  assert.equal(game.exitUnlocked, 'timer');
-  assert.ok(game.boss, 'the boss is still alive');
+  game.iframes = 1e9;
+  game.time = DIFFICULTY.softCap + 120;
+  game.floorTime = BOSS_SPAWN_TIME;
+  run(2);
+  assert.ok(game.boss);
+  game.boss.hp = 0;
+  run(1);
+  assert.equal(game.exitUnlocked, 'boss');
 });
 
 test('the auto-firing standard weapon kills the boss, which then opens the stairs', () => {

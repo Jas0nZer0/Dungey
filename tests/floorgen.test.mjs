@@ -2,7 +2,7 @@
 import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  TILE, STEP, FLOOR_W, FLOOR_H, ENEMY_SIZE, PLAYER_SIZE, PLAYER_HP, PLAYER_SPEED, FLOOR_UNLOCK_TIME,
+  TILE, STEP, FLOOR_W, FLOOR_H, ENEMY_SIZE, PLAYER_SIZE, PLAYER_HP, PLAYER_SPEED, BOSS_SPAWN_TIME,
   SPAWN_MIN_DIST, SPAWN_MAX_DIST,
 } from '../src/config.js';
 import { DIFFICULTY } from '../src/difficulty.config.js';
@@ -18,7 +18,7 @@ import {
 import { overlapsWall } from '../src/collision.js';
 import { player } from '../src/entities.js';
 import {
-  game, resetGame, updateGame, descend, spawnEnemy, unlockExit, exitTimeLeft, directorTime, enemyStats,
+  game, resetGame, updateGame, descend, spawnEnemy, unlockExit, bossTimeLeft, directorTime, enemyStats,
 } from '../src/game.js';
 
 const SEEDS = 1000;
@@ -198,8 +198,8 @@ test('floor transition keeps clock, score, kills, HP and the director offset; re
   assert.equal(game.timeOffset, 30);
   assert.equal(game.iframes, 0.4);
   assert.equal(game.state, 'playing');
-  // The old floor's enemies are gone; the only enemy on the new floor is its sleeping boss (M5).
-  assert.deepEqual(game.enemies.map((e) => e.type), ['boss']);
+  // The old floor's enemies are gone; the new floor starts empty; its boss arrives after BOSS_SPAWN_TIME.
+  assert.equal(game.enemies.length, 0);
   assert.equal(game.projectiles.length, 0);
   assert.notEqual(map.map((r) => r.join('')).join('\n'), before);
   assert.equal(Math.floor(player.x / TILE), game.layout.spawn.tx);
@@ -274,9 +274,16 @@ test('every floor hides a boss away from the spawn, in a connected room, and the
   assert.deepEqual(generateFloor(7).boss, generateFloor(7).boss);
 });
 
-test('floors load with their boss asleep at the boss tile, and not in the arena', () => {
+test('the boss appears asleep at its tile after BOSS_SPAWN_TIME, and never in the arena', () => {
   for (const seed of [1, 2, 3, 4, 5]) {
     resetGame({ seed });
+    game.spawnCd = 1e9;
+    game.iframes = 1e9;
+    assert.equal(game.boss, null, 'no boss when the floor starts');
+    game.floorTime = BOSS_SPAWN_TIME - 0.5;
+    for (let i = 0; i < 20; i++) updateGame(STEP);
+    assert.equal(game.boss, null, 'not yet');
+    for (let i = 0; i < 40; i++) updateGame(STEP);
     const b = game.boss;
     assert.ok(b && b.state === 'dormant');
     assert.equal(Math.floor(b.x / TILE), game.layout.boss.tx);
@@ -284,7 +291,9 @@ test('floors load with their boss asleep at the boss tile, and not in the arena'
     assert.ok(!overlapsWall(b));
   }
   resetGame({ arena: true });
-  assert.equal(game.boss, null);
+  game.floorTime = BOSS_SPAWN_TIME + 10;
+  updateGame(STEP);
+  assert.equal(game.boss, null, 'the arena has no boss');
   assert.equal(game.enemies.length, 0);
 });
 
@@ -304,19 +313,38 @@ test('floors are large: 120x80 tiles with plenty of rooms and a long walk to the
   assert.ok(minWalk >= 20, `shortest walk ${minWalk} s`);
 });
 
-test('the stairs stay locked until the floor timer ends, then unlock without a boss', () => {
+test('the stairs stay locked with no boss kill, however long the floor runs, and the clock does not open them', () => {
   const e = game.layout.exit;
   player.x = (e.tx + 0.5) * TILE;
   player.y = (e.ty + 0.5) * TILE;
   game.iframes = 1e9;
+  game.floorTime = 0;
   updateGame(STEP);
   assert.equal(game.floor, 1, 'locked stairs must not descend');
-  assert.ok(exitTimeLeft() > FLOOR_UNLOCK_TIME - 1);
-  game.floorTime = FLOOR_UNLOCK_TIME - STEP / 2;
-  updateGame(STEP); // the timer ends and, with the player on the stairs, the descent follows
-  assert.equal(game.floor, 2);
-  assert.equal(game.exitUnlocked, false, 'the next floor starts locked');
-  assert.equal(game.floorTime, 0);
+  assert.equal(bossTimeLeft(), BOSS_SPAWN_TIME - STEP > 0 ? bossTimeLeft() : 0);
+  assert.ok(bossTimeLeft() > BOSS_SPAWN_TIME - 1);
+  game.floorTime = BOSS_SPAWN_TIME + 5;
+  game.hp = 99;
+  updateGame(STEP);
+  assert.equal(game.floor, 1, 'the floor timer alone never opens the stairs');
+  assert.equal(game.exitUnlocked, false);
+  game.time = 3000; // far past the soft cap, deep in overtime
+  game.hp = 99;
+  updateGame(STEP);
+  assert.equal(game.floor, 1);
+  assert.equal(game.exitUnlocked, false);
+});
+
+test('stairs unlocked by the boss stay open in overtime and past the soft cap', () => {
+  const e = game.layout.exit;
+  game.time = DIFFICULTY.softCap + 60;
+  unlockExit('boss');
+  for (let i = 0; i < 600; i++) { game.hp = 99; game.iframes = 1e9; updateGame(STEP); }
+  assert.equal(game.exitUnlocked, 'boss', 'overtime never closes the stairs');
+  player.x = (e.tx + 0.5) * TILE;
+  player.y = (e.ty + 0.5) * TILE;
+  updateGame(STEP);
+  assert.equal(game.floor, 2, 'the player can still descend in overtime');
 });
 
 test('unlockExit("boss") opens the stairs at once (hook for M5)', () => {

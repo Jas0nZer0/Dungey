@@ -19,7 +19,7 @@ globalThis.window = { addEventListener() {}, innerWidth: 960, innerHeight: 540 }
 const { render } = await import('../src/render.js');
 const { game, resetGame, spawnEnemy, spawnBoss, unlockExit, updateGame } = await import('../src/game.js');
 const { player } = await import('../src/entities.js');
-const { TILE, STEP } = await import('../src/config.js');
+const { TILE, STEP, BOSS_SPAWN_TIME } = await import('../src/config.js');
 
 const frame = () => { log.calls = {}; log.sets = {}; render(false); };
 
@@ -29,6 +29,8 @@ test('every enemy type, tell and the boss bar draw without error', () => {
   game.fireCd = 1e9;
   game.iframes = 1e9;
   for (const type of ['chaser', 'shooter', 'swarmer', 'tank', 'summoner']) spawnEnemy(player.x + 60, player.y + 20, type);
+  game.floorTime = BOSS_SPAWN_TIME;
+  updateGame(STEP / 1000);
   const boss = game.boss;
   boss.x = player.x + 120;
   boss.y = player.y;
@@ -51,8 +53,11 @@ test('the stairs arrow glow is drawn only once the stairs are unlocked', () => {
   resetGame({ seed: 42 });
   game.spawnCd = 1e9;
   game.fireCd = 1e9;
-  game.boss.x = 40 * TILE; // out of the way; the boss draws no glow either way
   frame();
+  game.floorTime = BOSS_SPAWN_TIME;
+  updateGame(STEP / 1000);
+  frame();
+  assert.ok(!(log.sets.shadowBlur > 0), 'the boss spawning does not show the glow');
   assert.ok(!(log.sets.shadowBlur > 0), 'no glow while locked');
   unlockExit('boss');
   frame();

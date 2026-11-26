@@ -3,7 +3,7 @@
 import {
   TILE, PLAYER_HP, PLAYER_IFRAMES, FIRE_INTERVAL, BULLET_SPEED, BULLET_RADIUS,
   BULLET_LIFE, BULLET_DAMAGE, ENEMY_FLASH, ENEMY_KNOCKBACK,
-  SPAWN_MIN_DIST, SPAWN_MAX_DIST, FLOOR_UNLOCK_TIME,
+  SPAWN_MIN_DIST, SPAWN_MAX_DIST, BOSS_SPAWN_TIME,
 } from './config.js';
 import { DIFFICULTY } from './difficulty.config.js';
 import { directorAt, phaseAt } from './director.js';
@@ -45,7 +45,7 @@ export const game = {
   seed: 0, // run seed: with it, every floor of the run can be regenerated
   floor: 1, // floor number within the run, starting at 1
   floorTime: 0, // seconds spent on this floor; resets on descend (the run clock `time` does not)
-  exitUnlocked: false, // the stairs work once the floor timer ends or the boss dies
+  exitUnlocked: false, // false until the floor's boss dies ('boss'); once open they stay open
   layout: arenaLayout(), // the current floor: { spawn, exit, enemySpawns, rooms, ... } (exit is null in the arena)
 };
 
@@ -78,8 +78,6 @@ function loadFloor(n) {
   game.exitUnlocked = false;
   placePlayer(game.layout.spawn);
   clearCombat();
-  const b = game.layout.boss;
-  if (b) spawnBoss((b.tx + 0.5) * TILE, (b.ty + 0.5) * TILE);
 }
 
 // Empty the field of everything that fights, and mark the map as new for the flow field.
@@ -93,14 +91,15 @@ function clearCombat() {
   game.mapVersion++;
 }
 
-// Unlock the stairs. `why` is 'timer' or 'boss'. A boss death calls unlockExit('boss').
+// Unlock the stairs. `why` is 'boss' (the only in-game reason). A boss death calls it.
 export function unlockExit(why = 'boss') {
   game.exitUnlocked = why;
 }
 
-// Seconds until the timer unlocks the stairs (0 once unlocked).
-export function exitTimeLeft() {
-  return game.exitUnlocked ? 0 : Math.max(0, FLOOR_UNLOCK_TIME - game.floorTime);
+// Seconds until this floor's boss spawns (0 once it has appeared or died, and on floors with no boss).
+export function bossTimeLeft() {
+  if (!game.layout.boss || game.boss || game.bossDefeated) return 0;
+  return Math.max(0, BOSS_SPAWN_TIME - game.floorTime);
 }
 
 // Go down to the next floor.
@@ -388,7 +387,12 @@ export function updateGame(dt) {
   game.time += dt;
   game.score += DIFFICULTY.score.perSecond * dt;
   game.floorTime += dt;
-  if (!game.exitUnlocked && game.floorTime >= FLOOR_UNLOCK_TIME) unlockExit('timer');
+  // The boss appears in its hiding room 2:00 after arriving. Killing it unlocks the stairs.
+  const bs = game.layout.boss;
+  if (bs && !game.boss && !game.bossDefeated && game.floorTime >= BOSS_SPAWN_TIME) {
+    spawnBoss((bs.tx + 0.5) * TILE, (bs.ty + 0.5) * TILE);
+    game.effects.push({ kind: 'bossspawn', x: (bs.tx + 0.5) * TILE, y: (bs.ty + 0.5) * TILE, r: 70, t: 0.8, max: 0.8 });
+  }
   const exit = game.layout.exit;
   if (exit && game.exitUnlocked && Math.floor(player.x / TILE) === exit.tx && Math.floor(player.y / TILE) === exit.ty) {
     descend();
