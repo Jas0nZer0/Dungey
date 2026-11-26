@@ -37,7 +37,7 @@ Defaults apply until you change them. Update this section when you decide.
 | Decision | Default | Affects |
 |---|---|---|
 | Resolution and embed size | 960x540 (16:9) | M0, M7, M10 |
-| Art source | Licensed pixel-art pack, license recorded per asset | M7 |
+| Art source | Claude-generated art. Pixel art is likely. Final style decided at M7 | M7 |
 | Input | Keyboard and mouse only. Gamepad deferred | M1, M8 |
 | M4 position | Before M5. Move after M6 if you want build depth first | M4, M5, M6 |
 
@@ -127,10 +127,10 @@ Defaults apply until you change them. Update this section when you decide.
 **Done when:**
 - [ ] No placeholder squares remain.
 - [ ] The visual shift is noticeable by minute 6 to 8.
-- [ ] Every asset has a recorded license or author in the repo.
+- [ ] Every asset's origin (generated, with the generating prompt or script) is recorded in the repo.
 - [ ] Total asset size is under 10 MB.
 
-**Risk:** asset licensing, and style consistency across mixed sources.
+**Risk:** style consistency across generated assets. Fix the palette, tile size and sprite size before generating anything.
 **Handoff:**
 
 ### M8. Menus, onboarding and persistence
