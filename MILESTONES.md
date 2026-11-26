@@ -56,15 +56,15 @@ Defaults apply until you change them. Update this section when you decide.
 **Handoff:** Layout: `src/config.js` (TILE=32, VIEW_W=960, VIEW_H=540, UPDATE_HZ=60, STEP=1/60), `map.js` (`map`, `mapWidth`, `mapHeight`, `isFloor(x,y)`), `input.js` (`initInput(canvas, clientToGame)`, `isHeld(key)`, `drainPresses()` returns non-repeat key taps since last call, `clearInput()`, `mouse {x,y,down}` in game-space coords), `entities.js` (`player {x,y}` in tile units, `updateEntities(presses)`), `loop.js` (`startLoop({update, render, onPause})`, `isPaused/setPaused/togglePause`, `stats.updates` counter), `render.js` (`initRender()`, `render(paused)`, `resize()`, `clientToGame(cx,cy)`, `canvas`), `main.js` wires them. Behaviour: update runs at fixed 60 Hz via accumulator (frame dt clamped to 0.25 s; measured 59.5 updates/s). Canvas is 960x540 internal; the 20x15 map is centred with whole-pixel offsets. CSS scaling keeps 16:9, integer scale at 1x and above, fractional below. Esc toggles pause (handled in a keydown listener, not in update). Window blur and `document.hidden` pause; resume is Esc only. Pausing clears held keys and queued taps. Player still moves one tile per key tap (scaffold behaviour); M1 replaces this with velocity movement. Mouse state is tracked but unused. Tuning: none. Debug hook: `window.__dungey.stats`. Known bugs: none. Not tested on Firefox or Safari (M9).
 
 ### M1. Twin-stick movement
-**Status:** todo
+**Status:** partial
 **Scope:** WASD movement with velocity, mouse aim, axis-separated AABB tile collision, camera follow, a map larger than one screen.
 **Done when:**
-- [ ] Player slides along walls with no snagging on corners.
-- [ ] Player cannot tunnel through walls at any speed.
-- [ ] Crosshair and facing indicator track the mouse.
+- [x] Player slides along walls with no snagging on corners. (`npm test`, 8 headless tests)
+- [x] Player cannot tunnel through walls at any speed. (tested to 100,000 px/s plus a 20,000-step fuzz)
+- [ ] Crosshair and facing indicator track the mouse. Code written, not verified in a browser (the sandbox denied starting a local server). `needs human`, or run `tests`-style Playwright check against `window.__dungey`.
 
 **Risk:** collision feel. Corner snagging is the usual failure.
-**Handoff:**
+**Handoff:** Layout: new `src/collision.js` (`moveBody(body, dx, dy)` axis-separated AABB with sub-steps under TILE/2 so no speed tunnels; `overlapsWall(body)`), `src/camera.js` (`camera {x,y}` top-left in world px, whole-pixel, clamped to map; `updateCamera(target)`). `config.js` adds PLAYER_SPEED=180 px/s, PLAYER_SIZE=20 px, PLAYER_ACCEL=1800, PLAYER_FRICTION=2400. `map.js` is now 48x32 tiles (1536x1024 px), built from rectangles, same exports (`map`, `mapWidth`, `mapHeight`, `isFloor`); out-of-bounds is wall. `entities.js`: `player {x,y,w,h,vx,vy,angle}` with x,y as hitbox centre in world pixels (no longer tile units), spawn at tile (2,2); `stepPlayer(p, dirX, dirY, dt)` is the pure step; `updateEntities(dt)` reads WASD or arrows via `isHeld`, moves, updates the camera, then sets `player.angle` from `mouse` plus camera. `input.js` lowercases letter keys. `main.js` calls `updateEntities(dt)` and discards `drainPresses()` each tick. `render.js` draws only visible tiles offset by the camera, a facing line on the player and a red crosshair at the mouse (OS cursor hidden via CSS). Tests: `npm test` (`tests/collision.test.mjs`, needs Node 18+; `package.json` sets `"type": "module"`). Debug hook: `window.__dungey = {stats, player, camera}`. Known gaps: crosshair and facing tracking is unverified in a browser at any canvas scale; mouse stays at its last position when the cursor leaves the canvas. Work is on branch `m1-twin-stick`, not yet merged to main.
 
 ### M2. Playable prototype
 **Status:** todo

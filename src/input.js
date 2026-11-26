@@ -9,6 +9,9 @@ const GAME_KEYS = new Set([
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd',
 ]);
 
+// Letters compare lowercase so Shift or Caps Lock does not stick a key.
+const norm = (k) => (k.length === 1 ? k.toLowerCase() : k);
+
 export function isHeld(key) {
   return held.has(key);
 }
@@ -29,13 +32,14 @@ export function clearInput() {
 export function initInput(canvas, mapToGame) {
   toGame = mapToGame;
   window.addEventListener('keydown', (e) => {
-    if (!GAME_KEYS.has(e.key)) return;
+    const key = norm(e.key);
+    if (!GAME_KEYS.has(key)) return;
     e.preventDefault();
-    if (e.repeat || held.has(e.key)) return;
-    held.add(e.key);
-    presses.push(e.key);
+    if (e.repeat || held.has(key)) return;
+    held.add(key);
+    presses.push(key);
   });
-  window.addEventListener('keyup', (e) => held.delete(e.key));
+  window.addEventListener('keyup', (e) => held.delete(norm(e.key)));
   canvas.addEventListener('mousemove', (e) => {
     const p = toGame(e.clientX, e.clientY);
     mouse.x = p.x;
