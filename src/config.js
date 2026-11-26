@@ -14,7 +14,7 @@ export const PLAYER_FRICTION = 2400; // px/s^2 while no direction is held
 // Player combat tuning.
 export const PLAYER_HP = 5;
 export const PLAYER_IFRAMES = 0.8; // s of invulnerability after taking a hit
-export const FIRE_INTERVAL = 0.15; // s between shots; the standard weapon fires automatically
+export const FIRE_INTERVAL = 0.3; // s between shots; the standard weapon fires automatically
 export const BULLET_SPEED = 520; // px/s
 export const BULLET_RADIUS = 3; // px
 export const BULLET_LIFE = 1.2; // s
