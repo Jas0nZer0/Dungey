@@ -48,6 +48,26 @@ function drawMap() {
       ctx.fillRect(x * TILE - camera.x, y * TILE - camera.y, TILE, TILE);
     }
   }
+  drawExit();
+}
+
+// The stairs down: a glowing tile with a downward arrow.
+function drawExit() {
+  const e = game.layout.exit;
+  if (!e) return;
+  const sx = e.tx * TILE - camera.x;
+  const sy = e.ty * TILE - camera.y;
+  if (sx < -TILE || sx > VIEW_W || sy < -TILE || sy > VIEW_H) return;
+  const pulse = 0.55 + 0.25 * Math.sin(game.time * 4);
+  ctx.fillStyle = `rgba(120,220,255,${pulse})`;
+  ctx.fillRect(sx + 2, sy + 2, TILE - 4, TILE - 4);
+  ctx.fillStyle = '#0b1c24';
+  ctx.beginPath();
+  ctx.moveTo(sx + 9, sy + 10);
+  ctx.lineTo(sx + TILE - 9, sy + 10);
+  ctx.lineTo(sx + TILE / 2, sy + TILE - 8);
+  ctx.closePath();
+  ctx.fill();
 }
 
 function drawPlayer() {
@@ -95,6 +115,9 @@ function drawHud() {
   ctx.fillStyle = '#fff';
   ctx.fillText(`HP ${'♥'.repeat(Math.max(0, game.hp))}`, 12, 24);
   ctx.fillText(`Time ${clock(game.time)}   Kills ${game.kills}   Score ${Math.floor(game.score)}`, 12, 46);
+  ctx.textAlign = 'right';
+  ctx.fillText(`Floor ${game.floor}   Seed ${game.seed}`, VIEW_W - 12, 24);
+  ctx.textAlign = 'left';
   if (directorTime() > DIFFICULTY.softCap) {
     // Pulse so the player notices the exponential phase has begun.
     ctx.fillStyle = Math.floor(game.time * 2) % 2 === 0 ? '#ff5a5a' : '#ffb0b0';

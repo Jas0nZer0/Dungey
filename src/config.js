@@ -1,5 +1,7 @@
 // Shared constants.
 export const TILE = 32;
+export const MAP_W = 48; // tiles; every floor is this size, so mapWidth/mapHeight stay constants
+export const MAP_H = 32;
 export const VIEW_W = 960;
 export const VIEW_H = 540;
 export const UPDATE_HZ = 60;

@@ -8,7 +8,9 @@ import {
 import { DIFFICULTY } from './difficulty.config.js';
 import { directorAt } from './director.js';
 import { createGrid } from './spatial.js';
-import { isFloor, mapWidth, mapHeight } from './map.js';
+import { isFloor, mapWidth, mapHeight, loadTiles, loadArena, ARENA_SPAWN } from './map.js';
+import { generateFloor } from './floorgen.js';
+import { floorSeed } from './rng.js';
 import { moveBody } from './collision.js';
 import { player } from './entities.js';
 
@@ -28,18 +30,61 @@ export const game = {
   projectiles: [], // { x, y, vx, vy, life }
   enemies: [], // { x, y, w, h, vx, vy, hp, maxHp, speed, flash }
   rng: Math.random, // tests replace this for determinism
+  seed: 0, // run seed: with it, every floor of the run can be regenerated
+  floor: 1, // floor number within the run, starting at 1
+  layout: arenaLayout(), // the current floor: { spawn, exit, enemySpawns, rooms, ... } (exit is null in the arena)
 };
 
-export function resetGame() {
-  player.x = 2.5 * TILE;
-  player.y = 2.5 * TILE;
+const randomSeed = () => Math.floor(Math.random() * 2 ** 32);
+
+// Every floor tile of the hand-built arena, used for enemy spawns there.
+function arenaLayout() {
+  const enemySpawns = [];
+  for (let y = 1; y < mapHeight - 1; y++) for (let x = 1; x < mapWidth - 1; x++) if (isFloor(x, y)) enemySpawns.push([x, y]);
+  return {
+    arena: true, spawn: { ...ARENA_SPAWN }, exit: null, enemySpawns, rooms: [],
+  };
+}
+
+function placePlayer(spawn) {
+  player.x = (spawn.tx + 0.5) * TILE;
+  player.y = (spawn.ty + 0.5) * TILE;
   player.vx = 0;
   player.vy = 0;
-  Object.assign(game, {
-    state: 'playing', time: 0, timeOffset: 0, kills: 0, score: 0, hp: PLAYER_HP, iframes: 0, fireCd: 0, spawnCd: 1,
-  });
+}
+
+// Build floor n of the current run, load it into the map and put the player at its spawn.
+// Only the map, enemies and projectiles change; the clock, score, kills and HP carry over.
+function loadFloor(n) {
+  game.floor = n;
+  game.layout = generateFloor(floorSeed(game.seed, n));
+  loadTiles(game.layout.tiles);
+  placePlayer(game.layout.spawn);
   game.projectiles.length = 0;
   game.enemies.length = 0;
+}
+
+// Go down to the next floor.
+export function descend() {
+  loadFloor(game.floor + 1);
+}
+
+// Start a new run. `seed` fixes the layout of every floor (random when omitted).
+// `arena: true` loads the hand-built test arena instead of a generated floor.
+export function resetGame({ seed = randomSeed(), arena = false } = {}) {
+  Object.assign(game, {
+    state: 'playing', time: 0, timeOffset: 0, kills: 0, score: 0, hp: PLAYER_HP, iframes: 0, fireCd: 0, spawnCd: 1,
+    seed: seed >>> 0, floor: 1,
+  });
+  if (arena) {
+    loadArena();
+    game.layout = arenaLayout();
+    placePlayer(game.layout.spawn);
+    game.projectiles.length = 0;
+    game.enemies.length = 0;
+  } else {
+    loadFloor(1);
+  }
 }
 
 // The time the difficulty director reads: run time plus the extension offset.
@@ -72,12 +117,13 @@ export function runSummary() {
   };
 }
 
-// Pick a random floor tile far enough from the player. Gives up after a few tries.
+// Pick a spawn point from the floor's list (open tiles away from the player's start room)
+// that is far enough from the player. Gives up after a few tries.
 function trySpawn() {
+  const points = game.layout.enemySpawns;
+  if (!points.length) return;
   for (let i = 0; i < 20; i++) {
-    const tx = 1 + Math.floor(game.rng() * (mapWidth - 2));
-    const ty = 1 + Math.floor(game.rng() * (mapHeight - 2));
-    if (!isFloor(tx, ty)) continue;
+    const [tx, ty] = points[Math.floor(game.rng() * points.length)];
     const x = (tx + 0.5) * TILE;
     const y = (ty + 0.5) * TILE;
     if (Math.hypot(x - player.x, y - player.y) < SPAWN_MIN_DIST) continue;
@@ -197,6 +243,11 @@ export function updateGame(dt) {
   if (game.state !== 'playing') return;
   game.time += dt;
   game.score += DIFFICULTY.score.perSecond * dt;
+  const exit = game.layout.exit;
+  if (exit && Math.floor(player.x / TILE) === exit.tx && Math.floor(player.y / TILE) === exit.ty) {
+    descend();
+    return;
+  }
   game.fireCd = Math.max(0, game.fireCd - dt);
   if (game.fireCd <= 0) fire();
   updateProjectiles(dt);

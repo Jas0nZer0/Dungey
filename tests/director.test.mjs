@@ -12,7 +12,7 @@ import {
 const SOFT = DIFFICULTY.softCap;
 
 beforeEach(() => {
-  resetGame();
+  resetGame({ arena: true });
   game.spawnCd = 1e9;
   player.x = 4.5 * TILE;
   player.y = 12.5 * TILE;
@@ -56,7 +56,7 @@ test('time offset shifts the director but not the run clock', () => {
   spawnEnemy(100, 100);
   assert.equal(game.enemies[0].hp, directorAt(SOFT + 120).hp);
   assert.equal(game.time, 0);
-  resetGame();
+  resetGame({ arena: true });
   assert.equal(game.timeOffset, 0, 'a new run starts with no offset');
 });
 
@@ -71,7 +71,7 @@ test('score counts survival time and kills, and kills pay more in overtime', () 
   const timePts = game.time * DIFFICULTY.score.perSecond;
   assert.ok(Math.abs(game.score - (timePts + base)) < 1e-6);
 
-  resetGame();
+  resetGame({ arena: true });
   game.spawnCd = 1e9;
   game.iframes = 1e9;
   game.timeOffset = SOFT + 10;
@@ -115,7 +115,7 @@ test('spatial grid returns every entity within one cell size and clamps out-of-r
 // Scripted fast-forward past minute 15. The player is invulnerable and standing still,
 // so the crowd piles up: the worst case for separation.
 function fastForward(startSec, seconds, { clustered }) {
-  resetGame();
+  resetGame({ arena: true });
   game.rng = (() => { let s = 12345; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
   game.timeOffset = startSec;
   game.spawnCd = 0;

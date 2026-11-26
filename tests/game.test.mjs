@@ -18,7 +18,7 @@ import {
 import { directorAt } from '../src/director.js';
 
 beforeEach(() => {
-  resetGame();
+  resetGame({ arena: true });
   game.spawnCd = 1e9; // no random spawns unless a test wants them
   player.x = 4.5 * TILE;
   player.y = 12.5 * TILE;
@@ -100,7 +100,7 @@ test('dead state freezes the run; resetGame restarts it', () => {
   const t = game.time;
   run(10);
   assert.equal(game.time, t);
-  resetGame();
+  resetGame({ arena: true });
   assert.equal(game.state, 'playing');
   assert.equal(game.hp, PLAYER_HP);
   assert.equal(game.enemies.length, 0);
@@ -109,7 +109,7 @@ test('dead state freezes the run; resetGame restarts it', () => {
 });
 
 test('spawner respects the enemy cap and keeps spawns away from the player', () => {
-  resetGame();
+  resetGame({ arena: true });
   game.spawnCd = 0;
   player.x = 2.5 * TILE;
   player.y = 2.5 * TILE;
@@ -122,7 +122,7 @@ test('spawner respects the enemy cap and keeps spawns away from the player', () 
 });
 
 test('50 enemies plus bullets: update cost stays far below the 16.6 ms budget', () => {
-  resetGame();
+  resetGame({ arena: true });
   game.spawnCd = 1e9;
   game.iframes = 1e9;
   for (let i = 0; i < 50; i++) spawnEnemy((20 + (i % 10)) * TILE, (5 + Math.floor(i / 10) * 2) * TILE);

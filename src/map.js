@@ -1,7 +1,11 @@
 // Tile map, 48x32 tiles (1536x1024 px). '#' is wall, '.' is floor.
-// Built from rectangles so the layout stays readable. Out-of-bounds counts as wall.
-const W = 48;
-const H = 32;
+// `map` is one array that every module reads. It starts as the hand-built test arena below;
+// loadTiles() overwrites it in place with a generated floor (src/floorgen.js), so the exports
+// and the size never change. Out-of-bounds counts as wall.
+import { MAP_W, MAP_H } from './config.js';
+
+const W = MAP_W;
+const H = MAP_H;
 const grid = Array.from({ length: H }, () => Array(W).fill('.'));
 
 function fill(x0, y0, x1, y1, ch = '#') {
@@ -38,9 +42,26 @@ fill(41, 12, 41, 12, '.');
 fill(34, 24, 44, 25);
 fill(39, 24, 40, 25, '.');
 
+// The hand-built arena, kept as a fixed layout for collision and combat tests.
+export const ARENA_ROWS = grid.map((r) => r.join(''));
+export const ARENA_SPAWN = { tx: 2, ty: 2 };
+
 export const map = grid;
 export const mapWidth = W;
 export const mapHeight = H;
+
+// Copy rows of '#' and '.' (strings or arrays) into the live map.
+export function loadTiles(rows) {
+  if (rows.length !== H) throw new Error(`expected ${H} rows, got ${rows.length}`);
+  for (let y = 0; y < H; y++) {
+    if (rows[y].length !== W) throw new Error(`row ${y}: expected ${W} tiles, got ${rows[y].length}`);
+    for (let x = 0; x < W; x++) grid[y][x] = rows[y][x];
+  }
+}
+
+export function loadArena() {
+  loadTiles(ARENA_ROWS);
+}
 
 export function isFloor(x, y) {
   return map[y]?.[x] === '.';
