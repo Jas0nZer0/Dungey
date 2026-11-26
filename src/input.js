@@ -7,6 +7,7 @@ let toGame = (cx, cy) => ({ x: cx, y: cy });
 
 const GAME_KEYS = new Set([
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd',
+  'r', 'Enter', // restart after death
 ]);
 
 // Letters compare lowercase so Shift or Caps Lock does not stick a key.
