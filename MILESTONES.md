@@ -40,8 +40,9 @@ Defaults apply until you change them. Update this section when you decide.
 | Art source | Claude-generated art. Pixel art is likely. Final style decided at M7 | M7 |
 | Input | Keyboard and mouse only. Gamepad deferred | M1, M8 |
 | M4 position | Before M5. Move after M6 if you want build depth first | M4, M5, M6 |
-| Minimap reveal | Fog of war: tiles the player has seen stay drawn. Never shows the stairs. A full reveal or a stairs marker would remove the search that M4 added | M8 |
-| Stairs arrow timing | Appears the moment the stairs unlock. Built in M5 with the boss; pull it into M4 if you want it sooner | M4, M5 |
+| Minimap reveal | Decided: fog of war. Tiles the player has seen stay drawn; the stairs never show on the map. Tab opens a full-map overlay of the whole floor, with the same fog (explored areas only) | M8 |
+| Map overlay behaviour | Default: Tab toggles it, the game keeps running (no free pause), Esc or Tab closes it | M8 |
+| Stairs arrow timing | Decided: appears the moment the stairs unlock. Built in M5 with the boss; pull it into M4 if you want it sooner | M4, M5 |
 
 ## Milestones
 
@@ -140,11 +141,12 @@ Defaults apply until you change them. Update this section when you decide.
 
 ### M8. Menus, onboarding and persistence
 **Status:** todo
-**Scope:** Title screen, how-to-play, settings (volume, fullscreen), local high score and run history in `localStorage`. Also a minimap in the HUD (added after M4 review; move it to M7 if the HUD is built there).
+**Scope:** Title screen, how-to-play, settings (volume, fullscreen), local high score and run history in `localStorage`. Also a minimap in the HUD with fog of war, and a Tab key that opens a full-map overlay (added after M4 review; move to M7 if the HUD is built there). Add Tab to `GAME_KEYS` in `input.js` and stop the browser from moving focus on it.
 **Done when:**
 - [ ] A new player understands the controls in under 30 seconds (`needs human`).
 - [ ] Scores persist across reloads and fail gracefully when storage is blocked.
-- [ ] A minimap shows the player, nearby layout and enemies on the 120x80 floor, and costs under 1 ms per frame (draw from a cached canvas, not per tile each frame). What it reveals is set by the pending decision below. `needs human` for readability.
+- [ ] A minimap shows the player, nearby layout and enemies on the 120x80 floor with fog of war (explored tiles persist for the floor, reset on a new floor), never marks the stairs, and costs under 1 ms per frame (draw from a cached canvas, not per tile each frame). Headless test: the explored set only grows within a floor, and resets on descend.
+- [ ] Tab opens a full-map overlay of the whole floor showing only explored tiles, plus the player. The game keeps running while it is open, and Tab or Esc closes it. `needs human` for readability.
 
 **Risk:** `localStorage` is blocked in some itch.io embed contexts.
 **Handoff:**
