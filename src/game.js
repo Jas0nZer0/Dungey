@@ -2,7 +2,8 @@
 // No DOM access, so tests can run it in Node.
 import {
   TILE, PLAYER_HP, PLAYER_IFRAMES, FIRE_INTERVAL, BULLET_SPEED, BULLET_RADIUS,
-  BULLET_LIFE, BULLET_DAMAGE, ENEMY_SIZE, ENEMY_SPEED, ENEMY_HP,
+  BULLET_LIFE, BULLET_DAMAGE, ENEMY_SIZE, ENEMY_SPEED_START, ENEMY_SPEED_PER_SEC, ENEMY_SPEED_MAX, ENEMY_HP_START,
+  ENEMY_HP_PER_SEC,
   ENEMY_CONTACT_DAMAGE, ENEMY_FLASH, ENEMY_KNOCKBACK, ENEMY_CAP,
   SPAWN_INTERVAL_START, SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_DECAY, SPAWN_MIN_DIST,
 } from './config.js';
@@ -35,9 +36,18 @@ export function resetGame() {
   game.enemies.length = 0;
 }
 
+// Chaser stats for an enemy spawned at the given run time (seconds).
+export function enemyStats(time) {
+  return {
+    speed: Math.min(ENEMY_SPEED_MAX, ENEMY_SPEED_START + time * ENEMY_SPEED_PER_SEC),
+    hp: Math.round(ENEMY_HP_START + time * ENEMY_HP_PER_SEC),
+  };
+}
+
 export function spawnEnemy(x, y) {
+  const { speed, hp } = enemyStats(game.time);
   game.enemies.push({
-    x, y, w: ENEMY_SIZE, h: ENEMY_SIZE, vx: 0, vy: 0, hp: ENEMY_HP, flash: 0,
+    x, y, w: ENEMY_SIZE, h: ENEMY_SIZE, vx: 0, vy: 0, hp, speed, flash: 0,
   });
 }
 
@@ -102,8 +112,8 @@ function updateEnemies(dt) {
     const dx = player.x - e.x;
     const dy = player.y - e.y;
     const len = Math.hypot(dx, dy) || 1;
-    e.vx = (dx / len) * ENEMY_SPEED;
-    e.vy = (dy / len) * ENEMY_SPEED;
+    e.vx = (dx / len) * e.speed;
+    e.vy = (dy / len) * e.speed;
   }
   // Push overlapping enemies apart so a crowd spreads instead of stacking.
   for (let i = 0; i < list.length; i++) {

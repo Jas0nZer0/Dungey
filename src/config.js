@@ -22,8 +22,12 @@ export const BULLET_DAMAGE = 1;
 
 // Chaser enemy tuning.
 export const ENEMY_SIZE = 20; // square hitbox side, px
-export const ENEMY_SPEED = 90; // px/s, half the player's speed
-export const ENEMY_HP = 3;
+// Enemy speed and HP are fixed at spawn from the run time, so later spawns are tougher.
+export const ENEMY_SPEED_START = 55; // px/s at 0:00, about a third of the player's speed
+export const ENEMY_SPEED_PER_SEC = 0.5; // px/s gained per second of run time
+export const ENEMY_SPEED_MAX = 160; // px/s cap, kept under PLAYER_SPEED so the player can always kite
+export const ENEMY_HP_START = 3;
+export const ENEMY_HP_PER_SEC = 1 / 60; // +1 HP per minute of run time
 export const ENEMY_CONTACT_DAMAGE = 1;
 export const ENEMY_FLASH = 0.1; // s the sprite stays white after a hit
 export const ENEMY_KNOCKBACK = 6; // px pushed back per hit

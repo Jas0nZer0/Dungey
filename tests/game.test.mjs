@@ -1,11 +1,14 @@
 import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  TILE, STEP, FIRE_INTERVAL, ENEMY_HP, ENEMY_CAP, PLAYER_HP, PLAYER_IFRAMES, ENEMY_SPEED,
+  TILE, STEP, FIRE_INTERVAL, ENEMY_HP_START, ENEMY_CAP, PLAYER_HP, PLAYER_IFRAMES,
+  ENEMY_SPEED_START, ENEMY_SPEED_MAX, PLAYER_SPEED,
 } from '../src/config.js';
 import { player } from '../src/entities.js';
 import { isFloor } from '../src/map.js';
-import { game, resetGame, spawnEnemy, updateGame } from '../src/game.js';
+import {
+  game, resetGame, spawnEnemy, updateGame, enemyStats,
+} from '../src/game.js';
 
 beforeEach(() => {
   resetGame();
@@ -39,10 +42,10 @@ test('the standard weapon fires with no button held, along the aim angle', () =>
   assert.ok(last.vy > 0 && Math.abs(last.vx) < 1e-6);
 });
 
-test('bullet kills an enemy after ENEMY_HP hits and counts the kill', () => {
+test('bullet kills an enemy after ENEMY_HP_START hits and counts the kill', () => {
   spawnEnemy(player.x + 5 * TILE, player.y);
   game.enemies[0].vx = 0;
-  run(ENEMY_HP * Math.ceil(FIRE_INTERVAL / STEP) + 90);
+  run(ENEMY_HP_START * Math.ceil(FIRE_INTERVAL / STEP) + 90);
   assert.ok(game.kills >= 1);
 });
 
@@ -63,13 +66,13 @@ test('bullets are removed at walls and never sit inside one', () => {
   assert.equal(game.projectiles.length, 0);
 });
 
-test('enemy chases the player at ENEMY_SPEED', () => {
+test('enemy chases the player at ENEMY_SPEED_START at run time 0', () => {
   player.angle = -Math.PI / 2; // aim away so auto-fire does not hit the enemy
   spawnEnemy(player.x + 6 * TILE, player.y);
   const x0 = game.enemies[0].x;
   run(30);
   const moved = x0 - game.enemies[0].x;
-  assert.ok(Math.abs(moved - ENEMY_SPEED * 0.5) < 3, `moved ${moved}`);
+  assert.ok(Math.abs(moved - ENEMY_SPEED_START * 0.5) < 3, `moved ${moved}`);
 });
 
 test('contact damages once per invulnerability window, then kills the player', () => {
@@ -120,4 +123,19 @@ test('50 enemies plus bullets: update cost stays far below the 16.6 ms budget', 
   const perTick = (performance.now() - start) / ticks;
   console.log(`# 50 enemies: ${perTick.toFixed(3)} ms per update`);
   assert.ok(perTick < 2, `update took ${perTick} ms`);
+});
+
+test('enemies get faster and tougher with run time, speed capped below the player', () => {
+  const early = enemyStats(0);
+  const mid = enemyStats(120);
+  const late = enemyStats(600);
+  assert.equal(early.speed, ENEMY_SPEED_START);
+  assert.equal(early.hp, ENEMY_HP_START);
+  assert.ok(mid.speed > early.speed && mid.hp > early.hp);
+  assert.ok(late.hp > mid.hp);
+  assert.equal(late.speed, ENEMY_SPEED_MAX);
+  assert.ok(ENEMY_SPEED_MAX < PLAYER_SPEED);
+  game.time = 300;
+  spawnEnemy(100, 100);
+  assert.deepEqual([game.enemies[0].speed, game.enemies[0].hp], [enemyStats(300).speed, enemyStats(300).hp]);
 });
