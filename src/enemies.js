@@ -39,7 +39,7 @@ export function makeBoss(x, y, base) {
   return {
     type: 'boss', x, y, w: BOSS.size, h: BOSS.size, vx: 0, vy: 0, hp, maxHp: hp, speed: BOSS.speed, flash: 0,
     contact: BOSS.contact, knock: BOSS.knock,
-    state: 'dormant', stateT: 0, cd: 0, tell: null, tellMax: 0, aim: 0, attack: null, atkIdx: 0,
+    state: 'wake', stateT: BOSS.wakeTime, cd: 0, tell: 'wake', tellMax: BOSS.wakeTime, aim: 0, attack: null, atkIdx: 0,
     wpT: n % FLOW.repath, wpx: x, wpy: y, phase: 1, owner: null, minions: 0, invuln: false,
   };
 }
@@ -278,7 +278,7 @@ function thinkBoss(e, ctx, dt) {
   const d = Math.hypot(player.x - e.x, player.y - e.y);
 
   // Phase change: invulnerable roar, then faster with new attacks.
-  if (e.phase === 1 && e.hp <= e.maxHp * B.phase2At && e.state !== 'dormant') {
+  if (e.phase === 1 && e.hp <= e.maxHp * B.phase2At) {
     e.phase = 2;
     e.state = 'transition';
     e.stateT = B.transitionTime;
@@ -290,16 +290,6 @@ function thinkBoss(e, ctx, dt) {
 
   e.stateT -= dt;
   switch (e.state) {
-    case 'dormant':
-      e.vx = 0;
-      e.vy = 0;
-      if (d <= B.aggroRadius || e.hp < e.maxHp) {
-        e.state = 'wake';
-        e.stateT = B.wakeTime;
-        e.tell = 'wake';
-        e.tellMax = B.wakeTime;
-      }
-      break;
     case 'wake':
       e.vx = 0;
       e.vy = 0;

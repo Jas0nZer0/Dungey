@@ -223,12 +223,6 @@ function drawEnemies() {
     if (e.flash > 0 || e.invuln) fill = '#fff';
     else if (e.tell && Math.floor(e.stateT * 16) % 2 === 0) fill = '#fff'; // blink while telegraphing
     drawShape(e, sx, sy, fill);
-    if (e.type === 'boss' && e.state === 'dormant') {
-      ctx.fillStyle = '#fff';
-      ctx.font = '12px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('zzz', sx, sy - e.h / 2 - 12);
-    }
   }
   for (const fx of game.effects) {
     const sx = Math.round(fx.x - camera.x);
@@ -253,7 +247,7 @@ function drawEnemyProjectiles() {
 // Boss health bar along the bottom of the view while the boss is awake.
 function drawBossBar() {
   const b = game.boss;
-  if (!b || b.state === 'dormant') return;
+  if (!b) return;
   const w = 360;
   const x = (VIEW_W - w) / 2;
   const y = VIEW_H - 34;

@@ -62,8 +62,7 @@ export const BOSS = {
   size: 30, contact: 2, knock: 0, // see the size rule above ENEMIES
   hpBase: 60, hpPerDirectorHp: 12,
   speed: 70, phase2Speed: 95, // px/s while walking
-  aggroRadius: 420, // wakes when the player is this close, or when shot
-  wakeTime: 0.6,
+  wakeTime: 0.6, // roar on arrival, then it hunts the player from anywhere on the floor
   phase2At: 0.5,
   transitionTime: 1.2, // invulnerable roar between phases
   thinkTime: 1.3, phase2ThinkTime: 0.8, // walking time between attacks

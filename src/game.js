@@ -152,7 +152,7 @@ export function spawnEnemy(x, y, type = 'chaser') {
   return e;
 }
 
-// Add the floor's boss at (x, y). It sleeps until the player comes near or shoots it.
+// Add the floor's boss at (x, y). It roars for a moment, then hunts the player.
 export function spawnBoss(x, y) {
   const e = makeBoss(x, y, enemyStats(directorTime()));
   game.enemies.push(e);

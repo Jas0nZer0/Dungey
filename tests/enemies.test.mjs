@@ -283,29 +283,25 @@ const attackNow = (b, name) => {
   b.stateT = 0;
 };
 
-test('boss: hp comes from the director, it sleeps until you come near or shoot it', () => {
+test('boss: hp comes from the director; it spawns awake, roars, then hunts the player', () => {
   game.time = 0;
-  const b = spawnBoss(10 * TILE, 15 * TILE);
+  const b = spawnBoss(5 * TILE, 15 * TILE);
   const d = directorAt(0);
   assert.equal(b.maxHp, Math.round(BOSS.hpBase + BOSS.hpPerDirectorHp * d.hp));
   assert.equal(game.boss, b);
-  player.x = b.x + BOSS.aggroRadius + 100;
-  player.y = b.y;
-  run(secs(1));
-  assert.equal(b.state, 'dormant');
-  assert.equal(b.x, 10 * TILE);
-  player.x = b.x + BOSS.aggroRadius - 20;
-  run(2);
   assert.equal(b.state, 'wake');
   assert.equal(b.tell, 'wake');
-  run(secs(BOSS.wakeTime) + 2);
+  player.x = 40 * TILE; // far across the floor, out of sight; the boss still comes
+  player.y = 15 * TILE;
+  game.iframes = 1e9;
+  const x0 = b.x;
+  run(secs(BOSS.wakeTime) - 2);
+  assert.equal(b.x, x0, 'stands still during the roar');
+  run(secs(0.2));
   assert.equal(b.state, 'walk');
-  // Shooting it wakes it from any distance.
-  openArena();
-  const b2 = spawnBoss(10 * TILE, 15 * TILE);
-  shoot(b2);
-  run(2);
-  assert.notEqual(b2.state, 'dormant');
+  const d0 = Math.hypot(b.x - player.x, b.y - player.y);
+  run(secs(1)); // it walks for BOSS.thinkTime before its first attack
+  assert.ok(Math.hypot(b.x - player.x, b.y - player.y) < d0 - 50, 'it walks at the player with no aggro range');
 });
 
 test('boss slam: ground tell for the whole windup, no damage until it lands, and you can leave the ring', () => {
@@ -443,7 +439,7 @@ test('the boss spawns after 2:00 on the floor, and only its death unlocks the st
   run(5);
   const b = game.boss;
   assert.ok(b && game.enemies.includes(b), 'the boss appears at 2:00');
-  assert.equal(b.state, 'dormant');
+  assert.equal(b.state, 'wake', 'it spawns awake');
   assert.equal(game.exitUnlocked, false);
   game.floorTime += 500;
   run(secs(1));

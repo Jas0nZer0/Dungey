@@ -274,7 +274,7 @@ test('every floor hides a boss away from the spawn, in a connected room, and the
   assert.deepEqual(generateFloor(7).boss, generateFloor(7).boss);
 });
 
-test('the boss appears asleep at its tile after BOSS_SPAWN_TIME, and never in the arena', () => {
+test('the boss appears awake at its tile after BOSS_SPAWN_TIME, and never in the arena', () => {
   for (const seed of [1, 2, 3, 4, 5]) {
     resetGame({ seed });
     game.spawnCd = 1e9;
@@ -285,7 +285,7 @@ test('the boss appears asleep at its tile after BOSS_SPAWN_TIME, and never in th
     assert.equal(game.boss, null, 'not yet');
     for (let i = 0; i < 40; i++) updateGame(STEP);
     const b = game.boss;
-    assert.ok(b && b.state === 'dormant');
+    assert.ok(b && b.state === 'wake');
     assert.equal(Math.floor(b.x / TILE), game.layout.boss.tx);
     assert.equal(Math.floor(b.y / TILE), game.layout.boss.ty);
     assert.ok(!overlapsWall(b));
