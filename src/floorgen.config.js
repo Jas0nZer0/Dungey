@@ -13,6 +13,7 @@ export const FLOOR = {
   corridorWidth: 2, // tiles. 1-wide passages are rejected (enemies snag in them).
   extraLoopChance: 0.2, // chance per candidate extra link between near rooms (makes loops)
   maxLinkGap: 12, // extra links only join rooms whose rects are this close (tiles)
+  minBossPath: 60, // the boss room is at least this many steps of walking from the spawn when one is that far
   minExitPath: 120, // spawn to exit must be at least this many tiles of walking
   // Cover. Obstacles keep a 2-tile margin from room walls and from each other, so cover never
   // creates a 1-wide slot or an alcove. Density is the share of room area covered.

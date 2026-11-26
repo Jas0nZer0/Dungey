@@ -22,6 +22,13 @@ import {
 } from '../src/game.js';
 
 const SEEDS = 1000;
+const overlapsBox = (f, x, y, size) => {
+  const h = size / 2;
+  for (const [cx, cy] of [[x - h, y - h], [x + h - 1e-6, y - h], [x - h, y + h - 1e-6], [x + h - 1e-6, y + h - 1e-6]]) {
+    if (f.tiles[Math.floor(cy / TILE)][Math.floor(cx / TILE)] !== '.') return true;
+  }
+  return false;
+};
 
 // Generated once and shared by the tests below; generation is deterministic.
 const floors = Array.from({ length: SEEDS }, (_, s) => generateFloor(s));
@@ -191,7 +198,8 @@ test('floor transition keeps clock, score, kills, HP and the director offset; re
   assert.equal(game.timeOffset, 30);
   assert.equal(game.iframes, 0.4);
   assert.equal(game.state, 'playing');
-  assert.equal(game.enemies.length, 0);
+  // The old floor's enemies are gone; the only enemy on the new floor is its sleeping boss (M5).
+  assert.deepEqual(game.enemies.map((e) => e.type), ['boss']);
   assert.equal(game.projectiles.length, 0);
   assert.notEqual(map.map((r) => r.join('')).join('\n'), before);
   assert.equal(Math.floor(player.x / TILE), game.layout.spawn.tx);
@@ -242,6 +250,42 @@ test('enemies the director spawns never overlap a wall, on several floors', () =
     }
   }
   assert.ok(spawned >= 6 * 3 * 10, `only ${spawned} enemies spawned`);
+});
+
+test('every floor hides a boss away from the spawn, in a connected room, and the seed fixes it', () => {
+  let fallbacks = 0;
+  let nearest = Infinity;
+  for (const [seed, f] of floors.entries()) {
+    assert.ok(f.boss, `seed ${seed}: no boss`);
+    const { tx, ty, room } = f.boss;
+    assert.ok(room !== f.spawnRoom && room !== f.exitRoom, `seed ${seed}: boss in the spawn or exit room`);
+    assert.equal(f.tiles[ty][tx], '.', `seed ${seed}: boss on a wall`);
+    assert.deepEqual([tx, ty], [f.rooms[room].cx, f.rooms[room].cy]);
+    const d = distanceField(f.width, f.height, (x, y) => f.tiles[y]?.[x] === '.', f.spawn.tx, f.spawn.ty)[tx + ty * f.width];
+    assert.ok(d >= 0, `seed ${seed}: boss unreachable from the spawn`);
+    if (d < FLOOR.minBossPath) fallbacks++;
+    nearest = Math.min(nearest, d);
+    // The body (30 px) must stand clear of walls where it is placed.
+    assert.ok(!overlapsBox(f, (tx + 0.5) * TILE, (ty + 0.5) * TILE, 30), `seed ${seed}: boss body in a wall`);
+    assert.notDeepEqual(f.boss, { ...f.spawn }, 'not on the spawn');
+  }
+  console.log(`# boss placement over ${SEEDS} seeds: nearest boss ${nearest} steps from spawn, ${fallbacks} floors fell back below ${FLOOR.minBossPath}`);
+  assert.ok(nearest >= 20, `a boss only ${nearest} steps from the spawn`);
+  assert.deepEqual(generateFloor(7).boss, generateFloor(7).boss);
+});
+
+test('floors load with their boss asleep at the boss tile, and not in the arena', () => {
+  for (const seed of [1, 2, 3, 4, 5]) {
+    resetGame({ seed });
+    const b = game.boss;
+    assert.ok(b && b.state === 'dormant');
+    assert.equal(Math.floor(b.x / TILE), game.layout.boss.tx);
+    assert.equal(Math.floor(b.y / TILE), game.layout.boss.ty);
+    assert.ok(!overlapsWall(b));
+  }
+  resetGame({ arena: true });
+  assert.equal(game.boss, null);
+  assert.equal(game.enemies.length, 0);
 });
 
 test('floors are large: 120x80 tiles with plenty of rooms and a long walk to the stairs', () => {

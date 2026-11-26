@@ -1,6 +1,6 @@
 // Print a floor as ASCII for human review: node scripts/dump-floor.mjs <seed> [floor]
 // The seed is the run seed shown in the HUD; floor defaults to 1.
-// S = spawn, E = exit, # = wall, . = floor.
+// S = spawn, E = exit, B = boss, # = wall, . = floor.
 import { generateFloor, floorMetrics, qualityReport } from '../src/floorgen.js';
 import { floorSeed, parseSeed } from '../src/rng.js';
 
@@ -10,6 +10,7 @@ const f = generateFloor(floorSeed(runSeed, n));
 const rows = f.tiles.map((r) => r.split(''));
 rows[f.spawn.ty][f.spawn.tx] = 'S';
 rows[f.exit.ty][f.exit.tx] = 'E';
+rows[f.boss.ty][f.boss.tx] = 'B';
 console.log(rows.map((r) => r.join('')).join('\n'));
 const m = floorMetrics(f);
 const q = qualityReport(f);

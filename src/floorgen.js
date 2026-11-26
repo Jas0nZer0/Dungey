@@ -335,8 +335,22 @@ function buildAttempt(rng, w, h) {
     }
   });
 
+  // The boss hides in one room that is neither the spawn nor the exit room and sits at least
+  // FLOOR.minBossPath steps from the spawn (the farthest such room if none is that far). Drawn
+  // after everything else, so adding it never changed an existing layout.
+  const fromSpawn = distanceField(w, h, walkable, sp.tx, sp.ty);
+  const bossDist = (i) => fromSpawn[rooms[i].cx + rooms[i].cy * w];
+  const others = rooms.map((_, i) => i).filter((i) => i !== spawnRoom && i !== exitRoom);
+  let pool = others.filter((i) => bossDist(i) >= FLOOR.minBossPath);
+  if (!pool.length) {
+    const best = Math.max(...others.map(bossDist));
+    pool = others.filter((i) => bossDist(i) === best);
+  }
+  const bossRoom = rng.pick(pool);
+  const boss = { tx: rooms[bossRoom].cx, ty: rooms[bossRoom].cy, room: bossRoom };
+
   return {
-    width: w, height: h, tiles, rooms, links, spawnRoom, exitRoom, spawn: sp, exit: ex, enemySpawns,
+    width: w, height: h, tiles, rooms, links, spawnRoom, exitRoom, spawn: sp, exit: ex, enemySpawns, boss,
   };
 }
 

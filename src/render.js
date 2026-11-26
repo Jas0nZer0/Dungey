@@ -6,6 +6,8 @@ import { camera } from './camera.js';
 import { mouse } from './input.js';
 import { game, runSummary, clockTime, exitTimeLeft } from './game.js';
 import { DIFFICULTY } from './difficulty.config.js';
+import { ENEMIES, BOSS } from './enemies.config.js';
+import { stairsArrow } from './arrow.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -88,14 +90,207 @@ function drawPlayer() {
   ctx.stroke();
 }
 
+// Placeholder art: one colour and silhouette per type (real sprites come in M7).
+const LOOK = {
+  chaser: '#b33a3a', shooter: '#d9892b', swarmer: '#d8d34a', tank: '#7b2323', summoner: '#9a5be0', boss: '#cfd3ff',
+};
+
+function drawShape(e, sx, sy, fill) {
+  ctx.fillStyle = fill;
+  const hw = e.w / 2;
+  switch (e.type) {
+    case 'shooter': // diamond
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - hw - 2);
+      ctx.lineTo(sx + hw + 2, sy);
+      ctx.lineTo(sx, sy + hw + 2);
+      ctx.lineTo(sx - hw - 2, sy);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    case 'swarmer': // dot
+      ctx.beginPath();
+      ctx.arc(sx, sy, hw, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case 'summoner': // circle with a ring
+      ctx.beginPath();
+      ctx.arc(sx, sy, hw, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#e6d2ff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(sx, sy, hw + 4, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    case 'tank': // square with a heavy outline
+      ctx.fillRect(sx - hw, sy - hw, e.w, e.h);
+      ctx.strokeStyle = '#2a0b0b';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(sx - hw + 2, sy - hw + 2, e.w - 4, e.h - 4);
+      break;
+    case 'boss': // square with a crown
+      ctx.fillRect(sx - hw, sy - hw, e.w, e.h);
+      ctx.fillStyle = e.phase === 2 ? '#ff4d4d' : '#ffd24d';
+      for (let k = -1; k <= 1; k++) ctx.fillRect(sx + k * 12 - 3, sy - hw - 8, 6, 8);
+      break;
+    default:
+      ctx.fillRect(sx - hw, sy - hw, e.w, e.h);
+  }
+}
+
+// Ground markings that show an attack coming. They fill as the windup runs out.
+function drawTell(e) {
+  if (!e.tell || e.tellMax <= 0) return;
+  const sx = Math.round(e.x - camera.x);
+  const sy = Math.round(e.y - camera.y);
+  const p = 1 - Math.max(0, e.stateT) / e.tellMax; // 0 at the start of the windup, 1 at the strike
+  ctx.save();
+  ctx.lineWidth = 3;
+  switch (e.tell) {
+    case 'slam': {
+      const r = BOSS.slam.radius;
+      ctx.fillStyle = `rgba(255,70,70,${0.12 + 0.3 * p})`;
+      ctx.strokeStyle = 'rgba(255,90,90,0.9)';
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(sx, sy, r * p, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    }
+    case 'fan': {
+      const n = e.phase === 2 ? BOSS.fan.phase2Bolts : BOSS.fan.bolts;
+      ctx.strokeStyle = `rgba(255,140,60,${0.35 + 0.5 * p})`;
+      for (let i = 0; i < n; i++) {
+        const a = e.aim + BOSS.fan.spread * (n === 1 ? 0 : i / (n - 1) - 0.5);
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(sx + Math.cos(a) * 260, sy + Math.sin(a) * 260);
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'charge': {
+      const len = (e.type === 'boss' ? BOSS.charge.speed * BOSS.charge.time : ENEMIES.tank.chargeSpeed * ENEMIES.tank.chargeTime);
+      const wd = e.w;
+      ctx.fillStyle = `rgba(255,60,60,${0.15 + 0.3 * p})`;
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(e.aim);
+      ctx.fillRect(0, -wd / 2, len, wd);
+      ctx.restore();
+      break;
+    }
+    case 'shot': {
+      ctx.strokeStyle = `rgba(255,170,60,${0.3 + 0.6 * p})`;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + Math.cos(e.aim) * 280, sy + Math.sin(e.aim) * 280);
+      ctx.stroke();
+      break;
+    }
+    case 'summon':
+    case 'enrage':
+    case 'wake': {
+      const col = e.tell === 'enrage' ? '255,70,70' : '190,110,255';
+      ctx.strokeStyle = `rgba(${col},0.9)`;
+      ctx.lineWidth = 2 + 3 * p;
+      ctx.beginPath();
+      ctx.arc(sx, sy, e.w * (0.8 + 1.4 * (1 - p)), 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    }
+    default:
+  }
+  ctx.restore();
+}
+
 function drawEnemies() {
   for (const e of game.enemies) {
     const sx = Math.round(e.x - camera.x);
     const sy = Math.round(e.y - camera.y);
-    if (sx < -20 || sx > VIEW_W + 20 || sy < -20 || sy > VIEW_H + 20) continue;
-    ctx.fillStyle = e.flash > 0 ? '#fff' : '#b33a3a';
-    ctx.fillRect(sx - e.w / 2, sy - e.h / 2, e.w, e.h);
+    if (sx < -260 || sx > VIEW_W + 260 || sy < -260 || sy > VIEW_H + 260) continue;
+    drawTell(e);
   }
+  for (const e of game.enemies) {
+    const sx = Math.round(e.x - camera.x);
+    const sy = Math.round(e.y - camera.y);
+    if (sx < -30 || sx > VIEW_W + 30 || sy < -30 || sy > VIEW_H + 30) continue;
+    let fill = LOOK[e.type] ?? LOOK.chaser;
+    if (e.flash > 0 || e.invuln) fill = '#fff';
+    else if (e.tell && Math.floor(e.stateT * 16) % 2 === 0) fill = '#fff'; // blink while telegraphing
+    drawShape(e, sx, sy, fill);
+    if (e.type === 'boss' && e.state === 'dormant') {
+      ctx.fillStyle = '#fff';
+      ctx.font = '12px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('zzz', sx, sy - e.h / 2 - 12);
+    }
+  }
+  for (const fx of game.effects) {
+    const sx = Math.round(fx.x - camera.x);
+    const sy = Math.round(fx.y - camera.y);
+    const k = fx.t / fx.max;
+    ctx.fillStyle = fx.kind === 'slam' ? `rgba(255,120,80,${0.5 * k})` : `rgba(255,255,255,${0.6 * k})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, fx.r * (fx.kind === 'bossdeath' ? 2 - k : 1), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawEnemyProjectiles() {
+  ctx.fillStyle = '#ff7a3a';
+  for (const b of game.enemyProjectiles) {
+    ctx.beginPath();
+    ctx.arc(Math.round(b.x - camera.x), Math.round(b.y - camera.y), b.r + 1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Boss health bar along the bottom of the view while the boss is awake.
+function drawBossBar() {
+  const b = game.boss;
+  if (!b || b.state === 'dormant') return;
+  const w = 360;
+  const x = (VIEW_W - w) / 2;
+  const y = VIEW_H - 34;
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(x - 3, y - 3, w + 6, 20);
+  ctx.fillStyle = b.phase === 2 ? '#d83a3a' : '#e0b030';
+  ctx.fillRect(x, y, w * Math.max(0, b.hp / b.maxHp), 14);
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x - 0.5, y - 0.5, w + 1, 15);
+  ctx.fillStyle = '#fff';
+  ctx.font = '12px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('WARDEN', VIEW_W / 2, y - 7);
+  ctx.textAlign = 'left';
+}
+
+// A glowing, pulsing arrow beside the player that points at the unlocked stairs.
+function drawStairsArrow() {
+  const a = stairsArrow(player.x, player.y, game.layout.exit, camera, game.exitUnlocked);
+  if (!a) return;
+  const pulse = 0.5 + 0.5 * Math.sin(game.time * 5);
+  const size = 11 + 3 * pulse;
+  ctx.save();
+  ctx.translate(Math.round(a.x), Math.round(a.y));
+  ctx.rotate(a.angle);
+  ctx.shadowColor = '#7fe3ff';
+  ctx.shadowBlur = 8 + 14 * pulse;
+  ctx.fillStyle = `rgba(150,235,255,${0.65 + 0.35 * pulse})`;
+  ctx.beginPath();
+  ctx.moveTo(size, 0);
+  ctx.lineTo(-size * 0.7, -size * 0.8);
+  ctx.lineTo(-size * 0.3, 0);
+  ctx.lineTo(-size * 0.7, size * 0.8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawProjectiles() {
@@ -121,7 +316,7 @@ function drawHud() {
   if (game.layout.exit) {
     const left = Math.ceil(exitTimeLeft());
     ctx.fillStyle = game.exitUnlocked ? '#8fe3ff' : '#fff';
-    ctx.fillText(game.exitUnlocked ? 'Stairs open' : `Stairs unlock in ${clock(left)} or when the boss falls`, VIEW_W - 12, 46);
+    ctx.fillText(game.exitUnlocked ? (game.exitUnlocked === 'boss' ? 'Boss slain: stairs open' : 'Stairs open') : `Stairs unlock in ${clock(left)} or when the boss falls`, VIEW_W - 12, 46);
     ctx.fillStyle = '#fff';
   }
   ctx.textAlign = 'left';
@@ -161,7 +356,10 @@ export function render(paused) {
   drawMap();
   drawEnemies();
   drawProjectiles();
+  drawEnemyProjectiles();
   drawPlayer();
+  drawStairsArrow();
+  drawBossBar();
   drawHud();
   drawCrosshair();
 

@@ -2,12 +2,15 @@
 // No DOM access, so tests can run it in Node.
 import {
   TILE, PLAYER_HP, PLAYER_IFRAMES, FIRE_INTERVAL, BULLET_SPEED, BULLET_RADIUS,
-  BULLET_LIFE, BULLET_DAMAGE, ENEMY_SIZE, ENEMY_CONTACT_DAMAGE, ENEMY_FLASH, ENEMY_KNOCKBACK,
+  BULLET_LIFE, BULLET_DAMAGE, ENEMY_FLASH, ENEMY_KNOCKBACK,
   SPAWN_MIN_DIST, SPAWN_MAX_DIST, FLOOR_UNLOCK_TIME,
 } from './config.js';
 import { DIFFICULTY } from './difficulty.config.js';
 import { directorAt, phaseAt } from './director.js';
 import { createGrid } from './spatial.js';
+import { createFlowField, boxClear } from './flowfield.js';
+import { SPAWN_TABLE, ENEMIES } from './enemies.config.js';
+import { makeEnemy, makeBoss, thinkEnemy } from './enemies.js';
 import { isFloor, mapWidth, mapHeight, loadTiles, loadArena, ARENA_SPAWN } from './map.js';
 import { generateFloor } from './floorgen.js';
 import { floorSeed } from './rng.js';
@@ -18,6 +21,8 @@ import { player } from './entities.js';
 let grid = createGrid(mapWidth * TILE, mapHeight * TILE, TILE);
 const rebuildGrid = () => { grid = createGrid(mapWidth * TILE, mapHeight * TILE, TILE); };
 const nearBuf = [];
+const flow = createFlowField(); // one shared BFS from the player's tile (src/flowfield.js)
+export { flow };
 
 export const game = {
   state: 'playing', // 'playing' | 'dead'
@@ -30,7 +35,12 @@ export const game = {
   fireCd: 0,
   spawnCd: 1,
   projectiles: [], // { x, y, vx, vy, life }
-  enemies: [], // { x, y, w, h, vx, vy, hp, maxHp, speed, flash }
+  enemies: [], // { type, x, y, w, h, vx, vy, hp, maxHp, speed, flash, state, tell, ... } (see src/enemies.js)
+  enemyProjectiles: [], // { x, y, vx, vy, life, damage, r } bolts fired by shooters and the boss
+  effects: [], // short visual events { kind, x, y, r, t, max }, for the renderer only
+  boss: null, // the floor's living boss, or null (none in the arena, or already dead)
+  bossDefeated: false, // true once this floor's boss has died
+  mapVersion: 0, // bumps whenever a new map is loaded, so the flow field knows to rebuild
   rng: Math.random, // tests replace this for determinism
   seed: 0, // run seed: with it, every floor of the run can be regenerated
   floor: 1, // floor number within the run, starting at 1
@@ -67,12 +77,23 @@ function loadFloor(n) {
   game.floorTime = 0;
   game.exitUnlocked = false;
   placePlayer(game.layout.spawn);
-  game.projectiles.length = 0;
-  game.enemies.length = 0;
+  clearCombat();
+  const b = game.layout.boss;
+  if (b) spawnBoss((b.tx + 0.5) * TILE, (b.ty + 0.5) * TILE);
 }
 
-// Unlock the stairs. `why` is 'timer' or 'boss'. M5 calls unlockExit('boss') when the
-// floor's boss dies.
+// Empty the field of everything that fights, and mark the map as new for the flow field.
+function clearCombat() {
+  game.projectiles.length = 0;
+  game.enemies.length = 0;
+  game.enemyProjectiles.length = 0;
+  game.effects.length = 0;
+  game.boss = null;
+  game.bossDefeated = false;
+  game.mapVersion++;
+}
+
+// Unlock the stairs. `why` is 'timer' or 'boss'. A boss death calls unlockExit('boss').
 export function unlockExit(why = 'boss') {
   game.exitUnlocked = why;
 }
@@ -101,8 +122,7 @@ export function resetGame({ seed = randomSeed(), arena = false } = {}) {
     game.floorTime = 0;
     game.exitUnlocked = false;
     placePlayer(game.layout.spawn);
-    game.projectiles.length = 0;
-    game.enemies.length = 0;
+    clearCombat();
   } else {
     loadFloor(1);
   }
@@ -125,11 +145,20 @@ export function enemyStats(time) {
   return { speed: d.speed, hp: d.hp };
 }
 
-export function spawnEnemy(x, y) {
-  const { speed, hp } = enemyStats(directorTime());
-  game.enemies.push({
-    x, y, w: ENEMY_SIZE, h: ENEMY_SIZE, vx: 0, vy: 0, hp, maxHp: hp, speed, flash: 0,
-  });
+// Add an enemy of `type` (default chaser) at (x, y). Its HP and speed are the director's
+// numbers for the current time, scaled by the type's multipliers (src/enemies.config.js).
+export function spawnEnemy(x, y, type = 'chaser') {
+  const e = makeEnemy(type, x, y, enemyStats(directorTime()));
+  game.enemies.push(e);
+  return e;
+}
+
+// Add the floor's boss at (x, y). It sleeps until the player comes near or shoots it.
+export function spawnBoss(x, y) {
+  const e = makeBoss(x, y, enemyStats(directorTime()));
+  game.enemies.push(e);
+  game.boss = e;
+  return e;
 }
 
 // End-of-run numbers for the summary screen.
@@ -150,7 +179,7 @@ const ring = [];
 // in a ring around the player: at least SPAWN_MIN_DIST and at most SPAWN_MAX_DIST away, so
 // enemies on a large floor arrive in seconds. If no point lies in the ring, any point at
 // least SPAWN_MIN_DIST away will do.
-function trySpawn() {
+function trySpawn(room) {
   const points = game.layout.enemySpawns;
   ring.length = 0;
   let far = -1;
@@ -162,7 +191,26 @@ function trySpawn() {
   }
   const pick = ring.length ? ring[Math.floor(game.rng() * ring.length)] : far;
   if (pick < 0) return;
-  spawnEnemy((points[pick][0] + 0.5) * TILE, (points[pick][1] + 0.5) * TILE);
+  const t = directorTime();
+  let total = 0;
+  for (const row of SPAWN_TABLE) if (row.from <= t) total += row.weight;
+  let roll = game.rng() * total;
+  let kind = SPAWN_TABLE[0];
+  for (const row of SPAWN_TABLE) {
+    if (row.from > t) continue;
+    kind = row;
+    roll -= row.weight;
+    if (roll < 0) break;
+  }
+  const cx = (points[pick][0] + 0.5) * TILE;
+  const cy = (points[pick][1] + 0.5) * TILE;
+  const n = Math.max(1, Math.min(kind.pack, room));
+  for (let i = 0; i < n; i++) {
+    // A pack spreads in a small ring; spawn tiles have all eight neighbours open, so it fits.
+    const a = (i / n) * Math.PI * 2;
+    const r = n > 1 ? 9 : 0;
+    spawnEnemy(cx + Math.cos(a) * r, cy + Math.sin(a) * r, kind.type);
+  }
 }
 
 function fire() {
@@ -178,7 +226,6 @@ function fire() {
 }
 
 function updateProjectiles(dt) {
-  const half = ENEMY_SIZE / 2 + BULLET_RADIUS;
   const list = game.projectiles;
   grid.build(game.enemies);
   for (let i = list.length - 1; i >= 0; i--) {
@@ -188,18 +235,23 @@ function updateProjectiles(dt) {
     b.life -= dt;
     let dead = b.life <= 0 || !isFloor(Math.floor(b.x / TILE), Math.floor(b.y / TILE));
     if (!dead) {
-      // Hit the lowest-index overlapping enemy among the nearby candidates.
+      // Hit the lowest-index overlapping enemy among the nearby candidates. The grid cell is
+      // one tile, so every body up to a tile wide (the boss is 40 px) is found from its centre.
       let hit = -1;
       for (const j of grid.near(b.x, b.y, nearBuf)) {
         const e = game.enemies[j];
+        const half = e.w / 2 + BULLET_RADIUS;
         if (Math.abs(e.x - b.x) < half && Math.abs(e.y - b.y) < half && (hit < 0 || j < hit)) hit = j;
       }
       if (hit >= 0) {
         const e = game.enemies[hit];
-        e.hp -= BULLET_DAMAGE;
-        e.flash = ENEMY_FLASH;
-        const len = Math.hypot(b.vx, b.vy) || 1;
-        moveBody(e, (b.vx / len) * ENEMY_KNOCKBACK, (b.vy / len) * ENEMY_KNOCKBACK);
+        if (!e.invuln) {
+          e.hp -= BULLET_DAMAGE;
+          e.flash = ENEMY_FLASH;
+          const len = Math.hypot(b.vx, b.vy) || 1;
+          const k = ENEMY_KNOCKBACK * e.knock;
+          if (k > 0) moveBody(e, (b.vx / len) * k, (b.vy / len) * k);
+        }
         dead = true;
       }
     }
@@ -211,37 +263,75 @@ function updateProjectiles(dt) {
   for (const e of game.enemies) {
     if (e.hp > 0) {
       alive.push(e);
-    } else {
-      game.kills++;
-      game.score += sc.perEnemyHp * e.maxHp * mult;
+      continue;
+    }
+    game.kills++;
+    game.score += sc.perEnemyHp * e.maxHp * mult;
+    if (e.owner) e.owner.minions = Math.max(0, e.owner.minions - 1);
+    if (e === game.boss) {
+      game.boss = null;
+      game.bossDefeated = true;
+      game.effects.push({ kind: 'bossdeath', x: e.x, y: e.y, r: 90, t: 0.6, max: 0.6 });
+      if (!game.exitUnlocked) unlockExit('boss');
     }
   }
   game.enemies = alive;
 }
 
+// ---------- enemies ----------
+
+// The player takes damage unless still invulnerable from the last hit.
+function hurtPlayer(dmg) {
+  if (game.iframes > 0 || game.state !== 'playing') return false;
+  game.hp -= dmg;
+  game.iframes = PLAYER_IFRAMES;
+  if (game.hp <= 0) game.state = 'dead';
+  return true;
+}
+
+function shootBolt(x, y, angle, speed, damage, life, r) {
+  game.enemyProjectiles.push({
+    x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life, damage, r,
+  });
+}
+
+// Add a minion (a summoner's or the boss's) at a free spot near (x, y). Returns it, or null
+// when the hard enemy cap is reached.
+function spawnMinion(type, x, y) {
+  if (game.enemies.length >= DIFFICULTY.enemyCap.max) return null;
+  const size = ENEMIES[type].size;
+  if (!boxClear(x, y, size)) return null;
+  return spawnEnemy(x, y, type);
+}
+
+const aiCtx = {
+  game, player, flow, hurt: hurtPlayer, spawn: spawnMinion, shoot: shootBolt,
+  effect: (kind, x, y, r, secs) => game.effects.push({ kind, x, y, r, t: secs, max: secs }),
+};
+
 function updateEnemies(dt) {
   const list = game.enemies;
-  for (const e of list) {
-    e.flash = Math.max(0, e.flash - dt);
-    const dx = player.x - e.x;
-    const dy = player.y - e.y;
-    const len = Math.hypot(dx, dy) || 1;
-    e.vx = (dx / len) * e.speed;
-    e.vy = (dy / len) * e.speed;
+  if (list.length) {
+    // One BFS from the player's tile, only when the tile (or the map) changed.
+    flow.update(mapWidth, mapHeight, Math.floor(player.x / TILE), Math.floor(player.y / TILE), game.mapVersion);
   }
+  for (const e of list) thinkEnemy(e, aiCtx, dt);
   // Push overlapping enemies apart so a crowd spreads instead of stacking.
   // The grid limits each enemy to its neighbours, so the cost grows with n, not n^2.
   grid.build(list);
   for (let i = 0; i < list.length; i++) {
     const a = list[i];
+    if (a.type === 'boss') continue; // too heavy to shove
     for (const j of grid.near(a.x, a.y, nearBuf)) {
       if (j <= i) continue;
       const b = list[j];
+      if (b.type === 'boss') continue;
       const dx = b.x - a.x;
       const dy = b.y - a.y;
-      if (Math.abs(dx) >= ENEMY_SIZE || Math.abs(dy) >= ENEMY_SIZE) continue;
+      const sep = (a.w + b.w) / 2;
+      if (Math.abs(dx) >= sep || Math.abs(dy) >= sep) continue;
       const d = Math.hypot(dx, dy) || 1;
-      const push = (ENEMY_SIZE - d) * 0.5 * 0.2;
+      const push = (sep - d) * 0.5 * 0.2;
       a.vx -= (dx / d) * push / dt;
       a.vy -= (dy / d) * push / dt;
       b.vx += (dx / d) * push / dt;
@@ -256,17 +346,38 @@ function touchesPlayer(e) {
     && Math.abs(e.y - player.y) < (e.h + player.h) / 2;
 }
 
+function updateEnemyProjectiles(dt) {
+  const list = game.enemyProjectiles;
+  for (let i = list.length - 1; i >= 0; i--) {
+    const b = list[i];
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.life -= dt;
+    let dead = b.life <= 0 || !isFloor(Math.floor(b.x / TILE), Math.floor(b.y / TILE));
+    if (!dead && Math.abs(b.x - player.x) < player.w / 2 + b.r && Math.abs(b.y - player.y) < player.h / 2 + b.r) {
+      hurtPlayer(b.damage); // a bolt that lands during invulnerability is spent for nothing
+      dead = true;
+    }
+    if (dead) list.splice(i, 1);
+  }
+}
+
+function updateEffects(dt) {
+  const list = game.effects;
+  for (let i = list.length - 1; i >= 0; i--) {
+    list[i].t -= dt;
+    if (list[i].t <= 0) list.splice(i, 1);
+  }
+}
+
 function updateDamage(dt) {
   game.iframes = Math.max(0, game.iframes - dt);
+  updateEnemyProjectiles(dt);
+  updateEffects(dt);
   if (game.iframes > 0) return;
-  for (const e of game.enemies) {
-    if (touchesPlayer(e)) {
-      game.hp -= ENEMY_CONTACT_DAMAGE;
-      game.iframes = PLAYER_IFRAMES;
-      if (game.hp <= 0) game.state = 'dead';
-      return;
-    }
-  }
+  let dmg = 0;
+  for (const e of game.enemies) if (e.contact > dmg && touchesPlayer(e)) dmg = e.contact;
+  if (dmg > 0) hurtPlayer(dmg);
 }
 
 // One tick of combat. Call after the player has moved and aimed. The standard weapon
@@ -290,7 +401,7 @@ export function updateGame(dt) {
   if (game.spawnCd <= 0) {
     const dir = directorAt(directorTime());
     game.spawnCd += dir.spawnInterval;
-    for (let i = 0; i < dir.spawnBatch && game.enemies.length < dir.cap; i++) trySpawn();
+    for (let i = 0; i < dir.spawnBatch && game.enemies.length < dir.cap; i++) trySpawn(dir.cap - game.enemies.length);
   }
   updateEnemies(dt);
   updateDamage(dt);

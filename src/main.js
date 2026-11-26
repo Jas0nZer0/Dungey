@@ -3,7 +3,7 @@ import { initInput, drainPresses, clearInput } from './input.js';
 import { startLoop, isPaused, setPaused, togglePause, stats } from './loop.js';
 import { updateEntities, player } from './entities.js';
 import { camera } from './camera.js';
-import { game, updateGame, resetGame, spawnEnemy } from './game.js';
+import { game, updateGame, resetGame, spawnEnemy, spawnBoss } from './game.js';
 import { canvas, clientToGame, initRender, render } from './render.js';
 import { parseSeed } from './rng.js';
 
@@ -51,4 +51,4 @@ startLoop({
   onPause: clearInput,
 });
 
-window.__dungey = { stats, player, camera, game, resetGame, spawnEnemy }; // test hook
+window.__dungey = { stats, player, camera, game, resetGame, spawnEnemy, spawnBoss }; // test hook
