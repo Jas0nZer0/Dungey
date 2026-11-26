@@ -4,6 +4,7 @@ import {
   TILE, STEP, FIRE_INTERVAL, ENEMY_HP, ENEMY_CAP, PLAYER_HP, PLAYER_IFRAMES, ENEMY_SPEED,
 } from '../src/config.js';
 import { player } from '../src/entities.js';
+import { isFloor } from '../src/map.js';
 import { game, resetGame, spawnEnemy, updateGame } from '../src/game.js';
 
 beforeEach(() => {
@@ -14,47 +15,56 @@ beforeEach(() => {
   player.angle = 0;
 });
 
-const run = (ticks, firing = false) => { for (let i = 0; i < ticks; i++) updateGame(STEP, firing); };
+const run = (ticks) => { for (let i = 0; i < ticks; i++) updateGame(STEP); };
 
-test('fire rate: holding fire yields one shot per FIRE_INTERVAL', () => {
-  run(60, true); // 1 s
-  const expected = Math.ceil(1 / FIRE_INTERVAL);
-  // Bullets may have expired or hit walls; count by cooldown instead.
+test('fire rate: the weapon fires once per FIRE_INTERVAL with no input', () => {
   let shots = 0;
-  resetGame();
-  game.spawnCd = 1e9;
-  player.angle = 0;
   for (let i = 0; i < 60; i++) {
-    const before = game.fireCd;
-    updateGame(STEP, true);
-    if (game.fireCd > before || (before === 0 && game.fireCd === FIRE_INTERVAL)) shots++;
+    updateGame(STEP);
+    if (game.fireCd === FIRE_INTERVAL) shots++;
   }
+  const expected = Math.ceil(1 / FIRE_INTERVAL);
   assert.ok(Math.abs(shots - expected) <= 1, `shots ${shots} vs ${expected}`);
 });
 
-test('not firing creates no projectiles', () => {
-  run(30, false);
-  assert.equal(game.projectiles.length, 0);
+test('the standard weapon fires with no button held, along the aim angle', () => {
+  player.angle = 0;
+  run(Math.ceil(FIRE_INTERVAL / STEP) + 2);
+  assert.ok(game.projectiles.length >= 1);
+  for (const b of game.projectiles) assert.ok(b.vx > 0 && b.vy === 0);
+  player.angle = Math.PI / 2;
+  game.fireCd = 0;
+  run(1);
+  const last = game.projectiles[game.projectiles.length - 1];
+  assert.ok(last.vy > 0 && Math.abs(last.vx) < 1e-6);
 });
 
 test('bullet kills an enemy after ENEMY_HP hits and counts the kill', () => {
   spawnEnemy(player.x + 5 * TILE, player.y);
   game.enemies[0].vx = 0;
-  run(ENEMY_HP * Math.ceil(FIRE_INTERVAL / STEP) + 90, true);
-  assert.equal(game.kills >= 1, true);
+  run(ENEMY_HP * Math.ceil(FIRE_INTERVAL / STEP) + 90);
+  assert.ok(game.kills >= 1);
 });
 
-test('bullet disappears at a wall', () => {
-  player.x = 2.5 * TILE;
-  player.y = 2.5 * TILE;
-  player.angle = Math.PI; // toward the left border
-  run(1, true);
-  assert.ok(game.projectiles.length <= 1);
-  run(60, false);
+test('bullets are removed at walls and never sit inside one', () => {
+  player.angle = Math.PI; // toward the left border, 4 tiles away
+  for (let i = 0; i < 120; i++) {
+    updateGame(STEP);
+    for (const b of game.projectiles) {
+      assert.ok(isFloor(Math.floor(b.x / TILE), Math.floor(b.y / TILE)), `bullet in wall at ${b.x},${b.y}`);
+    }
+  }
+  assert.ok(game.projectiles.length < 6);
+  player.x = 1.2 * TILE; // muzzle starts inside the border wall: no bullet is created
+  player.angle = Math.PI;
+  game.projectiles.length = 0;
+  game.fireCd = 0;
+  run(1);
   assert.equal(game.projectiles.length, 0);
 });
 
 test('enemy chases the player at ENEMY_SPEED', () => {
+  player.angle = -Math.PI / 2; // aim away so auto-fire does not hit the enemy
   spawnEnemy(player.x + 6 * TILE, player.y);
   const x0 = game.enemies[0].x;
   run(30);
@@ -70,7 +80,7 @@ test('contact damages once per invulnerability window, then kills the player', (
   assert.equal(game.hp, PLAYER_HP - 1, 'no second hit during iframes');
   run(600);
   assert.equal(game.state, 'dead');
-  assert.equal(game.hp <= 0, true);
+  assert.ok(game.hp <= 0);
 });
 
 test('dead state freezes the run; resetGame restarts it', () => {
@@ -94,7 +104,7 @@ test('spawner respects the enemy cap and keeps spawns away from the player', () 
   player.x = 2.5 * TILE;
   player.y = 2.5 * TILE;
   game.iframes = 1e9; // survive for the test
-  for (let i = 0; i < 6000; i++) { game.spawnCd = 0; updateGame(STEP, false); }
+  for (let i = 0; i < 6000; i++) { game.spawnCd = 0; updateGame(STEP); }
   assert.ok(game.enemies.length <= ENEMY_CAP);
   assert.ok(game.enemies.length > 0);
 });
@@ -106,7 +116,7 @@ test('50 enemies plus bullets: update cost stays far below the 16.6 ms budget', 
   for (let i = 0; i < 50; i++) spawnEnemy((20 + (i % 10)) * TILE, (5 + Math.floor(i / 10) * 2) * TILE);
   const start = performance.now();
   const ticks = 600;
-  for (let i = 0; i < ticks; i++) { game.hp = 99; updateGame(STEP, true); }
+  for (let i = 0; i < ticks; i++) { game.hp = 99; updateGame(STEP); }
   const perTick = (performance.now() - start) / ticks;
   console.log(`# 50 enemies: ${perTick.toFixed(3)} ms per update`);
   assert.ok(perTick < 2, `update took ${perTick} ms`);

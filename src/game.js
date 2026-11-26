@@ -142,12 +142,14 @@ function updateDamage(dt) {
   }
 }
 
-// One tick of combat. Call after the player has moved and aimed.
-export function updateGame(dt, firing) {
+// One tick of combat. Call after the player has moved and aimed. The standard weapon
+// fires on its own at FIRE_INTERVAL along player.angle. Weapons that need a button
+// press (special attacks) are not built yet; add them as separate actions, not here.
+export function updateGame(dt) {
   if (game.state !== 'playing') return;
   game.time += dt;
   game.fireCd = Math.max(0, game.fireCd - dt);
-  if (firing && game.fireCd <= 0) fire();
+  if (game.fireCd <= 0) fire();
   updateProjectiles(dt);
   game.spawnCd -= dt;
   if (game.spawnCd <= 0) {

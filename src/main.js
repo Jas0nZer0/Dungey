@@ -1,5 +1,5 @@
 // Dungey entry point: wires input, loop, entities and render together.
-import { initInput, drainPresses, clearInput, mouse } from './input.js';
+import { initInput, drainPresses, clearInput } from './input.js';
 import { startLoop, isPaused, setPaused, togglePause, stats } from './loop.js';
 import { updateEntities, player } from './entities.js';
 import { camera } from './camera.js';
@@ -16,7 +16,7 @@ function update(dt) {
     return;
   }
   updateEntities(dt);
-  updateGame(dt, mouse.down);
+  updateGame(dt);
 }
 
 // Esc toggles pause. Handled here, not in update, so it works while paused.
